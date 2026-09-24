@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="theme-color" content="#2556E8">
+  <title>名刺管理</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="gate-page">
+  <div class="gate-bg"></div>
+
+  <main class="gate-container">
+    <div class="gate-card-wrap">
+      <div class="gate-header">
+        <div class="gate-brand">
+          <div class="brand-logo">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="5" width="20" height="14" rx="2.5"/>
+              <line x1="2" y1="10" x2="22" y2="10"/>
+            </svg>
+          </div>
+          <span class="gate-brand-text">名刺管理</span>
+        </div>
+        <p class="gate-sub">会社を選択</p>
+      </div>
+
+      <div class="tenant-list" id="tenantList">
+        <div class="skel-card"></div>
+        <div class="skel-card"></div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    (async () => {
+      const listEl = document.getElementById('tenantList');
+      try {
+        const res = await fetch('/api/tenants');
+        const data = await res.json();
+        if (!data.tenants || data.tenants.length === 0) {
+          listEl.innerHTML = '<p class="muted-msg">会社が登録されていません</p>';
+          return;
+        }
+        listEl.innerHTML = data.tenants.map((t, i) => `
+          <a href="/login?t=${encodeURIComponent(t.id)}"
+             class="tenant-card"
+             style="animation-delay: ${i * 60}ms;">
+            <div class="tenant-initial">${escapeHtml(t.logo_initial)}</div>
+            <div class="tenant-body">
+              <div class="tenant-name">${escapeHtml(t.display_name)}</div>
+              <div class="tenant-hint">パスワード入力へ</div>
+            </div>
+            <svg class="tenant-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+          </a>
+        `).join('');
+      } catch (err) {
+        listEl.innerHTML = `<p class="err-msg">読み込みに失敗しました</p>`;
+      }
+    })();
+
+    function escapeHtml(s) {
+      if (s == null) return '';
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+  </script>
+</body>
+</html>

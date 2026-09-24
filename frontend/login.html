@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="theme-color" content="#2556E8">
+  <title>ログイン - 名刺管理</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="gate-page">
+  <div class="gate-bg"></div>
+
+  <main class="gate-container">
+    <div class="gate-card-wrap">
+      <a href="/" class="gate-back">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6"/>
+        </svg>
+        会社選択に戻る
+      </a>
+
+      <div class="gate-header">
+        <div class="tenant-initial large" id="tenantInitial">—</div>
+        <h1 class="gate-title" id="tenantName">—</h1>
+        <p class="gate-sub">パスワードを入力してください</p>
+      </div>
+
+      <form id="loginForm" class="login-form">
+        <div class="input-group">
+          <input
+            type="password"
+            id="password"
+            placeholder="パスワード"
+            autocomplete="current-password"
+            autofocus
+            required
+          >
+        </div>
+        <button type="submit" id="loginBtn" class="btn-primary">
+          <span class="btn-text">ログイン</span>
+          <svg class="btn-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="5" y1="12" x2="19" y2="12"/>
+            <polyline points="12 5 19 12 12 19"/>
+          </svg>
+        </button>
+        <p id="errorMsg" class="err-msg"></p>
+      </form>
+    </div>
+  </main>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const tenantId = params.get('t');
+    if (!tenantId) { location.href = '/'; }
+
+    const tenantNameEl = document.getElementById('tenantName');
+    const tenantInitialEl = document.getElementById('tenantInitial');
+    const form = document.getElementById('loginForm');
+    const errorMsg = document.getElementById('errorMsg');
+    const loginBtn = document.getElementById('loginBtn');
+
+    (async () => {
+      try {
+        const res = await fetch('/api/tenants');
+        const data = await res.json();
+        const t = (data.tenants || []).find(x => x.id === tenantId);
+        if (t) {
+          tenantNameEl.textContent = t.display_name;
+          tenantInitialEl.textContent = t.logo_initial;
+        }
+      } catch {}
+    })();
+
+    fetch('/api/me', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data && data.authenticated && data.tenant.id === tenantId) location.href = '/app'; })
+      .catch(() => {});
+
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      errorMsg.textContent = '';
+      loginBtn.disabled = true;
+      loginBtn.classList.add('is-loading');
+      const password = document.getElementById('password').value;
+      try {
+        const res = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ tenant_id: tenantId, password }),
+        });
+        if (res.ok) {
+          location.href = '/app';
+        } else {
+          const data = await res.json().catch(() => ({}));
+          errorMsg.textContent = data.detail || 'ログインに失敗しました';
+        }
+      } catch (err) {
+        errorMsg.textContent = '通信エラー: ' + err.message;
+      } finally {
+        loginBtn.disabled = false;
+        loginBtn.classList.remove('is-loading');
+      }
+    });
+  </script>
+</body>
+</html>
