@@ -16,3 +16,6 @@ logs/
 credentials.json
 images/
 backend/tenants.yaml
+
+# 機能追加前のDBバックアップ
+backup-before-sales-*

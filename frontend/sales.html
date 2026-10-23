@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="theme-color" content="#2556E8">
+  <title>営業管理</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/sales.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="app-page">
+  <div class="app-shell">
+
+    <header class="top-bar">
+      <div class="top-bar-left">
+        <div class="brand-logo brand-logo-sm">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="7" width="20" height="14" rx="2"/>
+            <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+          </svg>
+        </div>
+        <div class="top-bar-title-group">
+          <div class="top-bar-title"><span id="tenantName">—</span> 営業</div>
+          <div class="top-bar-count" id="dealCount">—</div>
+        </div>
+      </div>
+      <div class="top-bar-right">
+        <a class="btn-ghost" href="/app.html" title="名刺管理へ">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="5" width="20" height="14" rx="2.5"/><line x1="2" y1="10" x2="22" y2="10"/>
+          </svg>
+          <span class="btn-ghost-label">名刺</span>
+        </a>
+        <button class="btn-ghost" id="intakeBtn" title="資料や文章から案件を追加（AI）">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 12 15 15"/>
+          </svg>
+          <span class="btn-ghost-label">取り込み</span>
+        </button>
+        <button class="btn-ghost" id="statsBtn" title="集計">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+          </svg>
+          <span class="btn-ghost-label">集計</span>
+        </button>
+        <button class="btn-ghost" id="settingsBtn" title="設定（アラート・署名・メールの用途）">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          <span class="btn-ghost-label">設定</span>
+        </button>
+        <button class="btn-sm btn-sm-primary sales-new-btn" id="newDealBtn">＋ 新規案件</button>
+      </div>
+    </header>
+
+    <div class="search-wrap">
+      <div class="search-field">
+        <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="search" id="searchInput" placeholder="会社名・担当者・案件名・接点で検索" autocomplete="off" spellcheck="false">
+      </div>
+    </div>
+
+    <div class="filter-row" id="stageFilter"></div>
+
+    <main class="main-grid">
+      <section class="pane pane-list" id="listPane">
+        <div class="skel-list"><div class="skel-row"></div><div class="skel-row"></div><div class="skel-row"></div></div>
+      </section>
+      <section class="pane pane-detail" id="detailPane">
+        <div class="detail-empty">
+          <div class="detail-empty-icon">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+            </svg>
+          </div>
+          <p class="detail-empty-text">案件を選択すると詳細が表示されます</p>
+        </div>
+      </section>
+    </main>
+
+    <div class="mobile-sheet" id="mobileSheet">
+      <header class="mobile-sheet-head">
+        <button class="btn-ghost" id="mobileBackBtn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          <span>戻る</span>
+        </button>
+      </header>
+      <div class="mobile-sheet-body" id="mobileSheetBody"></div>
+    </div>
+  </div>
+
+  <!-- 新規案件モーダル -->
+  <div class="dupe-modal-overlay" id="newDealOverlay" style="display:none">
+    <div class="dupe-modal" style="max-width:600px">
+      <div class="dupe-modal-head">
+        <div class="dupe-modal-title">新規案件</div>
+        <button class="dupe-modal-close" data-close="newDealOverlay" aria-label="閉じる">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="dupe-modal-body sales-form" id="newDealBody">
+        <div class="sales-field">
+          <div class="email-field-label">名刺（相手）</div>
+          <div id="pickedCard" class="picked-card" style="display:none"></div>
+          <input type="search" class="email-input" id="cardSearch" placeholder="会社名・氏名で検索" autocomplete="off">
+          <div class="card-results" id="cardResults"></div>
+        </div>
+        <div class="sales-field">
+          <div class="email-field-label">案件名</div>
+          <input type="text" class="email-input" id="newTitle" placeholder="例: 制御盤筐体 10台（空欄なら接点名から自動）" maxlength="120">
+        </div>
+        <div class="sales-grid-2">
+          <div class="sales-field">
+            <div class="email-field-label">接点</div>
+            <select class="email-input" id="newEvent"></select>
+          </div>
+          <div class="sales-field">
+            <div class="email-field-label">ステージ</div>
+            <select class="email-input" id="newStage"></select>
+          </div>
+        </div>
+        <div class="sales-grid-3" id="newEventFields" style="display:none">
+          <input type="text" class="email-input" id="newEventName" placeholder="接点名（例: ものづくりワールド大阪）" maxlength="100">
+          <input type="date" class="email-input" id="newEventDate">
+          <input type="text" class="email-input" id="newEventPlace" placeholder="場所" maxlength="100">
+        </div>
+        <div class="sales-grid-2">
+          <div class="sales-field">
+            <div class="email-field-label">次のアクション</div>
+            <input type="text" class="email-input" id="newNext" placeholder="例: 御礼メール" maxlength="200">
+          </div>
+          <div class="sales-field">
+            <div class="email-field-label">期限</div>
+            <input type="date" class="email-input" id="newDue">
+          </div>
+        </div>
+      </div>
+      <div class="email-modal-footer">
+        <div class="email-footer-info">名刺は名刺管理に登録済みのものから選びます</div>
+        <div class="email-footer-actions">
+          <button class="btn-sm" data-close="newDealOverlay">キャンセル</button>
+          <button class="btn-sm btn-sm-primary" id="createDealBtn">作成</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 集計モーダル -->
+  <div class="dupe-modal-overlay" id="statsOverlay" style="display:none">
+    <div class="dupe-modal" style="max-width:640px">
+      <div class="dupe-modal-head">
+        <div class="dupe-modal-title">集計</div>
+        <button class="dupe-modal-close" data-close="statsOverlay" aria-label="閉じる">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="dupe-modal-body" id="statsBody"></div>
+    </div>
+  </div>
+
+  <!-- 設定モーダル -->
+  <div class="dupe-modal-overlay" id="settingsOverlay" style="display:none">
+    <div class="dupe-modal" style="max-width:720px">
+      <div class="dupe-modal-head">
+        <div class="dupe-modal-title">設定</div>
+        <button class="dupe-modal-close" data-close="settingsOverlay" aria-label="閉じる">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="dupe-modal-body" id="settingsBody"></div>
+    </div>
+  </div>
+
+  <!-- 取り込みモーダル -->
+  <div class="dupe-modal-overlay" id="intakeOverlay" style="display:none">
+    <div class="dupe-modal" style="max-width:860px">
+      <div class="dupe-modal-head">
+        <div class="dupe-modal-title" id="intakeTitle">資料から取り込み</div>
+        <button class="dupe-modal-close" data-close="intakeOverlay" aria-label="閉じる">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="dupe-modal-body" id="intakeBody"></div>
+      <div class="email-modal-footer" id="intakeFooter"></div>
+    </div>
+  </div>
+
+  <!-- 返信ありモーダル -->
+  <div class="dupe-modal-overlay" id="replyOverlay" style="display:none">
+    <div class="dupe-modal" style="max-width:480px">
+      <div class="dupe-modal-head">
+        <div class="dupe-modal-title">返信あり</div>
+        <button class="dupe-modal-close" data-close="replyOverlay" aria-label="閉じる">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="dupe-modal-body">
+        <div class="email-field-label">メモ（任意・空欄のままでもOK）</div>
+        <textarea id="replyNote" class="email-input" rows="4" placeholder="例：来週中に図面を送るとのこと"></textarea>
+        <div class="reply-actions">
+          <button class="btn-sm" data-close="replyOverlay">キャンセル</button>
+          <button class="btn-sm btn-sm-primary" id="replySave">返信ありにする</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <div class="confirm-modal-overlay" id="confirmModalOverlay" style="display:none">
+    <div class="confirm-modal">
+      <div class="confirm-modal-icon" id="confirmModalIcon"></div>
+      <div class="confirm-modal-title" id="confirmModalTitle"></div>
+      <div class="confirm-modal-message" id="confirmModalMessage"></div>
+      <div class="confirm-modal-actions">
+        <button class="confirm-modal-btn confirm-modal-btn-cancel" id="confirmModalCancel">キャンセル</button>
+        <button class="confirm-modal-btn confirm-modal-btn-ok" id="confirmModalOk">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/sales.js"></script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+/* ── 一括重複整理 ── */
+.bulk-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 12px 14px; margin-bottom: 14px; border: 1px solid var(--blue-200); background: var(--accent-light);
+  border-radius: var(--r-lg); }
+.bulk-banner-text { font-size: 13px; color: var(--gray-700, #344054); }
+.bulk-banner-sub { margin-left: 8px; color: var(--gray-400); font-size: 12px; }
+.bulk-banner-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.bulk-top { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; align-items: flex-start; }
+.bulk-help { font-size: 12px; color: var(--gray-400); line-height: 1.6; }
+.bulk-section-title { display: flex; align-items: center; justify-content: space-between; font-size: 13px;
+  font-weight: 600; margin: 16px 0 8px; color: var(--gray-500); }
+.bulk-all { font-weight: 400; font-size: 12px; display: flex; gap: 6px; align-items: center; cursor: pointer; }
+.bulk-group { border: 1px solid var(--border); border-radius: var(--r-lg); margin-bottom: 10px;
+  background: var(--bg-surface); overflow: hidden; }
+.bulk-group.review { border-style: dashed; }
+.bulk-group-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--gray-50);
+  cursor: pointer; font-size: 12px; }
+.bulk-reason { flex: 1; color: var(--gray-500); }
+.bulk-count { color: var(--gray-400); }
+.bulk-cards { padding: 4px 0; }
+.bulk-card { display: flex; align-items: center; gap: 8px; padding: 6px 12px; cursor: pointer; font-size: 13px; }
+.bulk-card:hover { background: var(--gray-25); }
+.bulk-card-main { flex: 1; min-width: 0; }
+.bulk-card-sub { display: block; font-size: 11px; color: var(--gray-400); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bulk-card-date { font-size: 11px; color: var(--gray-400); white-space: nowrap; }
+.bulk-fill { padding: 6px 12px 10px 36px; font-size: 11px; color: var(--accent); line-height: 1.5; }
+.bulk-footer { position: sticky; bottom: -1px; display: flex; justify-content: flex-end; padding: 12px 0 4px;
+  background: linear-gradient(to bottom, transparent, var(--bg-surface) 30%); }
+@media (max-width: 600px) { .bulk-card-date { display: none; } }

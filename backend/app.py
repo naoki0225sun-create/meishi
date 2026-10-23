@@ -35,6 +35,10 @@ import io
 import db
 import dupes
 import mailer
+import sales  # 営業モジュール
+import slack_bot  # Slack連携
+import dedupe  # 名刺の一括重複整理
+import intake  # 資料取り込み
 
 load_dotenv()
 
@@ -78,6 +82,10 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup():
     db.init_db()
+    sales.init_db()
+    slack_bot.init_db()
+    dedupe.init_db()
+    intake.init_db()
     os.makedirs(IMAGES_DIR, exist_ok=True)
 
 
@@ -1032,6 +1040,20 @@ def delete_cards(req: CardDeleteRequest, session: dict = Depends(check_session))
         "sheet_removed": removed_count,
         "images_removed": image_removed,
     }
+
+
+# ── 営業モジュール ──
+app.include_router(sales.build_router(check_session, fetch_cards, get_tenant))
+app.include_router(intake.build_router(check_session, fetch_cards, get_tenant))
+app.include_router(dedupe.build_router(check_session, fetch_cards, image_path_for))
+app.include_router(slack_bot.build_router(slack_bot.SlackHandler(
+    fetch_cards=fetch_cards,
+    get_tenant=get_tenant,
+    get_sheets_service=get_sheets_service,
+    make_card_id=make_card_id,
+    clear_cache=lambda tenant_id: _cache.pop(tenant_id, None),
+    image_path_for=image_path_for,
+)))
 
 
 if os.path.exists(FRONTEND_DIR):

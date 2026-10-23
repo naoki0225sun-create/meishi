@@ -478,6 +478,7 @@ function detailHtml(card) {
   if (!state.editingAll) {
     if (card.email) actions.push(quickBtn('mail', 'メール', `mailto:${card.email}`));
     if (card.mobile) actions.push(quickBtn('phone', '電話', `tel:${card.mobile.replace(/[^\d+]/g, '')}`));
+    actions.push(quickBtn('deal', '案件を作成', `/sales.html?new=${encodeURIComponent(card.id)}`));
   }
 
   // Fields
@@ -746,6 +747,7 @@ function fieldRowHtml(card, def, overrides) {
 function quickBtn(type, label, href) {
   const icons = {
     mail: '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>',
+    deal: '<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>',
     phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>',
   };
   return `
@@ -1472,10 +1474,145 @@ async function openDupesModal() {
   els.dupeModalBody.innerHTML = '<div class="empty-text">読み込み中…</div>';
   els.dupeModalOverlay.style.display = 'flex';
   try {
-    const data = await api('/api/duplicates');
+    const [data, bulk, hist] = await Promise.all([
+      api('/api/duplicates'),
+      api('/api/dedupe/preview').catch(() => null),
+      api('/api/dedupe/batches').catch(() => ({ batches: [] })),
+    ]);
+    bulkState.preview = bulk;
     renderDupes(data.pairs);
+    renderBulkBanner(bulk, (hist.batches || []).find(b => !b.undone_at));
   } catch (err) {
     els.dupeModalBody.innerHTML = `<div class="empty-text">エラー: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+// ── 一括整理 ──
+const bulkState = { preview: null, choice: {} };
+
+function renderBulkBanner(bulk, lastBatch) {
+  if (!bulk) return;
+  const n = bulk.strict.length, r = bulk.review.length;
+  if (!n && !r && !lastBatch) return;
+  const div = document.createElement('div');
+  div.className = 'bulk-banner';
+  div.innerHTML = `
+    <div class="bulk-banner-text">
+      ${n ? `<b>確実な重複 ${n}組</b>（${bulk.strict_removed}枚を整理できます）` : '確実な重複はありません'}
+      ${r ? `<span class="bulk-banner-sub">要確認 ${r}組</span>` : ''}
+    </div>
+    <div class="bulk-banner-actions">
+      ${lastBatch ? `<button class="btn-sm" data-bulk-undo="${lastBatch.id}">前回の一括整理を元に戻す（${lastBatch.removed_count}枚）</button>` : ''}
+      ${n || r ? '<button class="btn-sm btn-sm-primary" data-bulk-open>まとめて整理する…</button>' : ''}
+    </div>`;
+  els.dupeModalBody.prepend(div);
+  div.querySelector('[data-bulk-open]')?.addEventListener('click', () => renderBulk());
+  div.querySelector('[data-bulk-undo]')?.addEventListener('click', e => undoBulk(e.target.dataset.bulkUndo));
+}
+
+function bulkGroups() {
+  const p = bulkState.preview;
+  return [...p.strict.map((g, i) => ({ ...g, key: 's' + i })), ...p.review.map((g, i) => ({ ...g, key: 'r' + i }))];
+}
+
+function renderBulk() {
+  const p = bulkState.preview;
+  bulkState.choice = {};
+  for (const g of bulkGroups()) bulkState.choice[g.key] = { on: g.level === 'strict', kept: g.kept_id };
+  const L = p.field_labels || {};
+  const groupHtml = g => `
+    <div class="bulk-group ${g.level}" data-key="${g.key}">
+      <label class="bulk-group-head">
+        <input type="checkbox" data-on="${g.key}" ${g.level === 'strict' ? 'checked' : ''}>
+        <span class="bulk-reason">${g.reasons.map(escapeHtml).join(' / ')}</span>
+        <span class="bulk-count">${g.cards.length}枚</span>
+      </label>
+      <div class="bulk-cards">
+        ${g.cards.map(c => `
+          <label class="bulk-card">
+            <input type="radio" name="kept-${g.key}" value="${escapeHtml(c.id)}" ${c.id === g.kept_id ? 'checked' : ''}>
+            <span class="bulk-card-main"><b>${escapeHtml(c.name || '(名前なし)')}</b> ${escapeHtml(c.company || '')}
+              <span class="bulk-card-sub">${escapeHtml([c.department_position, c.email, c.mobile || c.phone].filter(Boolean).join(' · '))}</span></span>
+            <span class="bulk-card-date">${escapeHtml(c.registered_date || '')}${c.has_image ? ' 📷' : ''}</span>
+          </label>`).join('')}
+      </div>
+      ${Object.keys(g.fill).length ? `<div class="bulk-fill">残す名刺に補う項目: ${Object.entries(g.fill)
+        .map(([f, v]) => `${escapeHtml(L[f] || f)}「${escapeHtml(v)}」`).join('、')}</div>` : ''}
+    </div>`;
+  els.dupeModalBody.innerHTML = `
+    <div class="bulk-top">
+      <button class="btn-sm" id="bulkBack">← 1組ずつの画面へ</button>
+      <div class="bulk-help">● が残る名刺です。他の名刺は一覧から隠れ、空いている項目・メモ・タグ・案件は残る名刺に引き継ぎます。スプレッドシートの行は消さないので、あとから元に戻せます。</div>
+    </div>
+    ${p.strict.length ? `<div class="bulk-section-title">確実な重複（${p.strict.length}組）
+      <label class="bulk-all"><input type="checkbox" id="bulkAllStrict" checked> すべて選ぶ</label></div>
+      ${p.strict.map((g, i) => groupHtml({ ...g, key: 's' + i })).join('')}` : ''}
+    ${p.review.length ? `<div class="bulk-section-title">要確認（${p.review.length}組・同じ人なら選んでください）</div>
+      ${p.review.map((g, i) => groupHtml({ ...g, key: 'r' + i })).join('')}` : ''}
+    <div class="bulk-footer"><button class="btn-sm btn-sm-primary" id="bulkApply"></button></div>`;
+  const body = els.dupeModalBody;
+  const update = () => {
+    const sel = Object.values(bulkState.choice).filter(c => c.on).length;
+    const btn = $('bulkApply');
+    btn.textContent = `選んだ ${sel}組をまとめる`;
+    btn.disabled = !sel;
+  };
+  body.querySelectorAll('[data-on]').forEach(cb => cb.addEventListener('change', () => {
+    bulkState.choice[cb.dataset.on].on = cb.checked; update();
+  }));
+  body.querySelectorAll('.bulk-card input[type=radio]').forEach(rb => rb.addEventListener('change', () => {
+    const key = rb.name.slice(5);
+    bulkState.choice[key].kept = rb.value;
+  }));
+  $('bulkAllStrict')?.addEventListener('change', e => {
+    body.querySelectorAll('.bulk-group.strict [data-on]').forEach(cb => {
+      cb.checked = e.target.checked; bulkState.choice[cb.dataset.on].on = cb.checked;
+    });
+    update();
+  });
+  $('bulkBack').addEventListener('click', () => openDupesModal());
+  $('bulkApply').addEventListener('click', applyBulk);
+  update();
+}
+
+async function applyBulk() {
+  const groups = bulkGroups().filter(g => bulkState.choice[g.key].on).map(g => ({
+    kept_id: bulkState.choice[g.key].kept, member_ids: g.cards.map(c => c.id),
+  }));
+  const removed = groups.reduce((n, g) => n + g.member_ids.length - 1, 0);
+  const ok = await showConfirm({
+    title: `${groups.length}組をまとめますか？`,
+    message: `${removed}枚の名刺が一覧から隠れ、残す名刺に引き継がれます。あとから「元に戻す」ができます。`,
+    okLabel: 'まとめる',
+  });
+  if (!ok) return;
+  const btn = $('bulkApply');
+  btn.disabled = true; btn.textContent = '処理中…';
+  try {
+    const res = await api('/api/dedupe/apply', { method: 'POST', body: JSON.stringify({ groups }) });
+    showToast(`${res.groups}組（${res.removed}枚）を整理しました`, { type: 'success', title: '一括整理' });
+    await Promise.all([loadCards(true), loadDupesCount()]);
+    openDupesModal();
+  } catch (err) {
+    showToast(err.message, { type: 'error', title: '一括整理に失敗' });
+    btn.disabled = false; btn.textContent = 'もう一度試す';
+  }
+}
+
+async function undoBulk(batchId) {
+  const ok = await showConfirm({
+    title: '一括整理を元に戻しますか？',
+    message: '隠した名刺を一覧に戻し、補った項目・メモ・タグ・案件のつなぎ先を整理前に戻します。',
+    okLabel: '元に戻す',
+  });
+  if (!ok) return;
+  try {
+    await api(`/api/dedupe/batches/${batchId}/undo`, { method: 'POST' });
+    showToast('元に戻しました', { type: 'success' });
+    await Promise.all([loadCards(true), loadDupesCount()]);
+    openDupesModal();
+  } catch (err) {
+    showToast(err.message, { type: 'error' });
   }
 }
 
