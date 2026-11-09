@@ -1,0 +1,457 @@
+/* ============================================================
+   画面の仕上げ（名刺管理・営業の共通） — 白地のまま、情報を整理して読みやすく
+   ・色: 白い紙／冷たいグレーの台／墨色の文字／工業ブルー1色。注意は琥珀・赤だけ
+   ・形: 角丸は 控えめ(8) と 浮くもの(14) の2段。影は浮くもの（ポップアップ・ダイアログ）にだけ
+   ・ひとつだけ目立たせるもの: 段階の「道のり」バー（一覧・ボード・詳細で同じ見せ方）
+   ============================================================ */
+:root {
+  --ink: #172033;
+  --ink-2: #4B5870;
+  --ink-3: #8A95A8;
+  --line: #E3E7EE;
+  --canvas: #F3F5F8;
+  --brand: #2556E8;
+  --brand-soft: #EAF0FE;
+  --amber: #C27803;
+  --amber-soft: #FFF6E5;
+  --red: #D23F3F;
+  --red-soft: #FDEDED;
+  --green: #18804A;
+  --green-soft: #E7F6EE;
+  --r-s: 8px;
+  --r-l: 14px;
+  --float: 0 12px 32px rgba(23, 32, 51, .12), 0 2px 6px rgba(23, 32, 51, .06);
+}
+body.app-page { background: var(--canvas); color: var(--ink); -webkit-font-smoothing: antialiased; }
+body.app-page :focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 6px; }
+@media (prefers-reduced-motion: reduce) { body.app-page * { animation: none !important; transition: none !important; } }
+
+/* 見出しは大文字・字間広げをやめて、普通の小見出しに */
+body.app-page .section-label { text-transform: none; letter-spacing: 0; font-size: 12.5px; font-weight: 700; color: var(--ink-2); }
+
+/* ── 上のバー ── */
+body.app-page .top-bar { height: 58px; padding: 0 18px; gap: 16px; border-bottom-color: var(--line); }
+body.app-page .top-bar-title { font-size: 15px; font-weight: 700; color: var(--ink); }
+body.app-page .top-bar-count { color: var(--ink-3); }
+body.app-page .btn-ghost { color: var(--ink-2); border-radius: var(--r-s); }
+body.app-page .btn-ghost:hover { background: var(--canvas); }
+.app-nav { display: flex; gap: 2px; background: var(--canvas); border: 1px solid var(--line); border-radius: 12px; padding: 3px; margin: 0 auto; }
+.app-nav-btn { appearance: none; border: 0; background: transparent; display: inline-flex; align-items: center; gap: 7px; padding: 7px 14px;
+  border-radius: 9px; font: inherit; font-size: 13.5px; font-weight: 600; color: var(--ink-2); cursor: pointer; white-space: nowrap; }
+.app-nav-btn svg { color: var(--ink-3); }
+.app-nav-btn:hover { color: var(--ink); }
+.app-nav-btn.is-active { background: #fff; color: var(--brand); box-shadow: 0 1px 2px rgba(23, 32, 51, .08), 0 0 0 1px var(--line); }
+.app-nav-btn.is-active svg { color: var(--brand); }
+
+/* ── 種類のタブ（営業／ブループリント／受注後の進行） ── */
+body.app-page .pipeline-tabs { background: #fff; border-bottom-color: var(--line); padding: 0 18px; min-height: 44px; }
+body.app-page .pipe-tab { font-size: 13.5px; padding: 11px 12px 10px; color: var(--ink-3); }
+body.app-page .pipe-tab.is-active { color: var(--ink); border-bottom-color: var(--brand); }
+body.app-page .pipe-tab.is-active .pipe-count { background: var(--brand-soft); color: var(--brand); }
+
+/* ── 検索・絞り込み ── */
+body.app-page .search-wrap { border-bottom: 0; padding: 12px 18px 6px; height: auto; }
+body.app-page .filter-row { padding: 6px 18px 10px; height: auto; border-bottom-color: var(--line); gap: 10px; }
+/* 営業の絞り込み行だけは、ポップアップを出すためにはみ出しを許す（名刺の行は横にスクロール） */
+body.app-page #stageFilter.filter-row { overflow: visible; }
+.chip-scroll { display: flex; gap: 6px; align-items: center; overflow-x: auto; scrollbar-width: none; flex: 1; min-width: 0; padding: 2px 0; }
+.chip-scroll::-webkit-scrollbar { display: none; }
+body.app-page .chip { border-color: var(--line); color: var(--ink-2); background: #fff; padding: 6px 11px; }
+body.app-page .chip.chip-active { background: var(--ink); color: #fff; border-color: var(--ink); }
+body.app-page .chip.chip-active .chip-count { background: rgba(255, 255, 255, .18); color: #fff; }
+body.app-page .chip.is-zero { color: var(--ink-3); }
+body.app-page .chip.is-zero .chip-count { background: transparent; color: var(--ink-3); }
+body.app-page .chip.chip-alert { border-color: #F5C2C2; color: var(--red); }
+body.app-page .chip.chip-alert.chip-active { background: var(--red); border-color: var(--red); color: #fff; }
+.view-ctl { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+.filter-pop-wrap { position: relative; }
+.filter-btn { appearance: none; display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); background: #fff; border-radius: 999px;
+  padding: 6px 12px; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--ink-2); cursor: pointer; white-space: nowrap; }
+.filter-btn:hover { border-color: #C9D1DD; }
+.filter-btn.is-on { border-color: var(--brand); color: var(--brand); }
+.filter-btn b { background: var(--brand); color: #fff; border-radius: 999px; font-size: 11px; min-width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; }
+.filter-pop { position: absolute; right: 0; top: calc(100% + 8px); z-index: 30; width: 280px; background: #fff; border: 1px solid var(--line);
+  border-radius: var(--r-l); box-shadow: var(--float); padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.filter-pop[hidden] { display: none; }
+.filter-pop-title { font-size: 12.5px; font-weight: 700; color: var(--ink-2); }
+.filter-pop select, .filter-pop .sort-select { width: 100%; margin: 0; }
+.filter-pop .owner-filter { width: 100%; border-radius: var(--r-s); padding: 8px 10px; }
+.filter-pop .sort-select { border-radius: var(--r-s); padding: 0 6px 0 10px; }
+.filter-pop .sort-select select { width: 100%; padding: 8px 18px 8px 0; font-size: 13px; }
+.filter-pop .btn-link { align-self: flex-start; }
+@media (max-width: 600px) { .filter-pop { position: fixed; top: auto; left: 12px; right: 12px; width: auto; margin-top: 8px; max-height: 70vh; overflow-y: auto; } }
+body.app-page .layout-toggle { margin-left: 0; border-color: var(--line); }
+body.app-page .layout-toggle button { padding: 6px 11px; color: var(--ink-2); }
+body.app-page .layout-toggle button.is-active { background: var(--ink); color: #fff; }
+
+/* ── 一覧 ── */
+body.app-page .pane-list { background: #fff; }
+body.app-page .deal-row { padding: 13px 18px 12px; gap: 5px; border-bottom-color: var(--line); }
+body.app-page .deal-row:hover { background: #F8FAFC; }
+body.app-page .deal-row.row-active { background: var(--brand-soft); }
+body.app-page .deal-company { font-size: 14px; font-weight: 700; color: var(--ink); }
+body.app-page .deal-title { color: var(--ink-2); font-size: 12.5px; display: flex; align-items: baseline; gap: 8px; }
+.deal-amt { margin-left: auto; font-weight: 700; color: var(--ink); font-feature-settings: "tnum"; flex-shrink: 0; }
+body.app-page .deal-meta { gap: 6px; align-items: center; margin-top: 2px; }
+body.app-page .deal-no { color: var(--ink-3); font-weight: 600; }
+
+/* 段階の道のり（これだけを目立たせる） */
+.route { display: flex; gap: 3px; height: 5px; margin: 3px 0 1px; max-width: 260px; }
+.route i { flex: 1; border-radius: 3px; background: #E7EBF1; }
+.route i.on { background: #9DB5F5; }
+.route i.cur { background: var(--brand); }
+.route.st-won i.on { background: #8FD1AC; }
+.route.st-won i.cur { background: var(--green); }
+.route.st-lost i.on { background: #D5DAE2; }
+.route.st-lost i.cur { background: var(--red); }
+.route.st-hold i.on, .route.st-down i.on { background: #F2D49A; }
+.route.st-hold i.cur, .route.st-down i.cur { background: var(--amber); }
+.board-card .route { max-width: none; margin: 6px 0 2px; }
+
+/* 札（バッジ）をひとつの形に */
+body.app-page .stage-badge { border-radius: 6px; padding: 2px 8px; font-weight: 700; }
+body.app-page .due-badge, body.app-page .owner-badge, body.app-page .nocard-badge, body.app-page .seg-badge, body.app-page .vendor-badge,
+body.app-page .group-badge, body.app-page .dup-site-badge, body.app-page .site-badge, body.app-page .missing-badge {
+  border-radius: 6px; font-size: 11px; padding: 2px 7px; line-height: 1.5; }
+body.app-page .row-alert, body.app-page .row-boss { font-size: 12px; }
+
+/* ── 詳細 ── */
+body.app-page .pane-detail { background: #fff; }
+body.app-page .deal-title-input { font-size: 21px; font-weight: 800; letter-spacing: -.01em; color: var(--ink); }
+body.app-page .dh { padding-bottom: 2px; }
+body.app-page .card-panel { padding: 12px; border: 1px solid var(--line); border-radius: var(--r-l); background: #fff; }
+body.app-page .card-thumb { border-radius: 8px; }
+/* 段階は横につながった道のりとして */
+body.app-page .stage-stepper { gap: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+body.app-page .stage-stepper::-webkit-scrollbar { display: none; }
+body.app-page .stage-step { border-radius: 0; border: 0; background: #EEF1F5; color: var(--ink-2); padding: 9px 14px 9px 20px; margin-right: 3px;
+  font-weight: 600; font-size: 12.5px; white-space: nowrap; flex-shrink: 0;
+  clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 50%, calc(100% - 9px) 100%, 0 100%, 9px 50%); }
+body.app-page .stage-step:first-child { padding-left: 14px; clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 50%, calc(100% - 9px) 100%, 0 100%); border-radius: 8px 0 0 8px; }
+body.app-page .stage-step:hover { background: #E2E7EF; color: var(--ink); }
+body.app-page .stage-step.is-past { background: #D7E2FC; color: #1B3BA5; }
+body.app-page .stage-step.is-current { background: var(--brand); color: #fff; }
+body.app-page .path-guide { background: #F7F9FC; border: 1px solid var(--line); border-radius: var(--r-s); }
+body.app-page .dtabs { border-bottom-color: var(--line); }
+body.app-page .dtab { color: var(--ink-3); }
+body.app-page .dtab.is-active { color: var(--ink); border-bottom-color: var(--brand); }
+body.app-page .kv-grid { border-color: var(--line); border-radius: var(--r-l); }
+body.app-page .boss-item { border-radius: var(--r-s); }
+
+/* ── 部長の目・マニュアル ── */
+body.app-page .view-pane { background: var(--canvas); }
+body.app-page .boss-card, body.app-page .stat-tile { border-color: var(--line); border-radius: var(--r-l); box-shadow: none; }
+body.app-page .stat-tile-value { color: var(--ink); }
+
+/* ── 予定（共有カレンダー） ── */
+.cal-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; padding: 18px; max-width: 1400px; margin: 0 auto; align-items: start; }
+.cal-main { background: #fff; border: 1px solid var(--line); border-radius: var(--r-l); padding: 14px 16px 16px; }
+.cal-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.cal-nav { display: flex; align-items: center; gap: 6px; }
+.cal-title { font-size: 20px; font-weight: 800; min-width: 128px; text-align: center; font-feature-settings: "tnum"; }
+.icon-btn { appearance: none; width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--line); background: #fff; font-size: 18px; line-height: 1; cursor: pointer; color: var(--ink-2); }
+.icon-btn:hover { border-color: #C9D1DD; color: var(--ink); }
+.cal-me { appearance: none; margin-left: auto; display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: #fff; border-radius: 999px;
+  padding: 6px 8px 6px 12px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; color: var(--ink); }
+.cal-me i, .cal-add-title i, .cal-person i, .cal-pick-person i { width: 9px; height: 9px; border-radius: 50%; background: var(--c); display: inline-block; flex-shrink: 0; }
+.cal-me span { font-size: 11.5px; color: var(--brand); background: var(--brand-soft); border-radius: 999px; padding: 2px 8px; }
+.cal-legend { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 12px 0 10px; }
+.cal-person { appearance: none; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: #fff; border-radius: 999px;
+  padding: 4px 10px; font: inherit; font-size: 12.5px; cursor: pointer; color: var(--ink); }
+.cal-person.is-off { opacity: .45; text-decoration: line-through; }
+.cal-legend-note { margin-left: auto; font-size: 11.5px; color: var(--ink-3); }
+.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+.cal-wd { font-size: 12px; font-weight: 700; color: var(--ink-3); text-align: center; padding: 7px 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: #FAFBFC; }
+.cal-wd.wd-0, .cal-cell.wd-0 .cal-num { color: #C2410C; }
+.cal-wd.wd-6, .cal-cell.wd-6 .cal-num { color: #1D4ED8; }
+.cal-cell { appearance: none; border: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: #fff; min-height: 104px; padding: 6px 6px 4px;
+  text-align: left; display: flex; flex-direction: column; gap: 4px; cursor: pointer; font: inherit; min-width: 0; }
+.cal-cell:hover { background: #F8FAFD; }
+.cal-cell.is-out { background: #FAFBFC; }
+.cal-cell.is-out .cal-num { opacity: .4; }
+.cal-cell.is-sel { box-shadow: inset 0 0 0 2px var(--brand); background: #FBFCFF; }
+.cal-num { font-size: 13px; font-weight: 700; color: var(--ink); font-feature-settings: "tnum"; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; }
+.cal-cell.is-today .cal-num { background: var(--brand); color: #fff !important; }
+.cal-evs { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.cal-pill { display: flex; align-items: center; gap: 5px; font-size: 11px; line-height: 1.35; padding: 2px 6px; border-radius: 5px; min-width: 0;
+  background: color-mix(in srgb, var(--c) 12%, #fff); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-pill i { width: 6px; height: 6px; border-radius: 50%; background: var(--c); flex-shrink: 0; }
+.cal-pill.appo { background: #fff; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, #fff); }
+.cal-more { font-size: 11px; color: var(--ink-3); padding-left: 4px; }
+.cal-side { background: #fff; border: 1px solid var(--line); border-radius: var(--r-l); padding: 16px; position: sticky; top: 12px; }
+.cal-day-head { display: flex; align-items: baseline; justify-content: space-between; }
+.cal-day-date { font-size: 19px; font-weight: 800; }
+.cal-day-date .wd-0 { color: #C2410C; } .cal-day-date .wd-6 { color: #1D4ED8; }
+.cal-day-sum { font-size: 12px; color: var(--ink-3); }
+.cal-sum { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 12px 0; }
+.cal-sum-row { border: 1px solid #CFEBDB; background: var(--green-soft); border-radius: 10px; padding: 7px 8px; display: flex; flex-direction: column; gap: 2px; }
+.cal-sum-row span { font-size: 11.5px; font-weight: 700; color: var(--green); }
+.cal-sum-row em { font-style: normal; font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-sum-row.is-busy { background: var(--amber-soft); border-color: #F3DDB2; }
+.cal-sum-row.is-busy span { color: var(--amber); }
+.cal-list { display: flex; flex-direction: column; gap: 6px; }
+.cal-item { display: grid; grid-template-columns: 4px minmax(0, 1fr) auto; gap: 10px; align-items: start; border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; }
+.cal-item > i { width: 4px; align-self: stretch; border-radius: 4px; background: var(--c); }
+.cal-item-top { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 13px; }
+.cal-item-top span { color: var(--ink-2); font-feature-settings: "tnum"; }
+.cal-slot { font-size: 11px; background: var(--canvas); border-radius: 5px; padding: 1px 6px; }
+.cal-item-title { font-size: 12.5px; margin-top: 2px; }
+.cal-item-memo { font-size: 12px; color: var(--ink-3); margin-top: 2px; white-space: pre-wrap; }
+.cal-free { font-size: 13px; color: var(--ink-3); padding: 10px 2px; }
+.cal-viewonly { font-size: 12.5px; color: var(--ink-2); background: var(--canvas); border-radius: 10px; padding: 10px 12px; margin-top: 14px; }
+.cal-add { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
+.cal-add-title { font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.slot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.slot-btn { appearance: none; border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 8px 10px; text-align: left; cursor: pointer; font: inherit;
+  display: flex; flex-direction: column; gap: 1px; }
+.slot-btn b { font-size: 13px; color: var(--ink); }
+.slot-btn span { font-size: 11.5px; color: var(--ink-3); font-feature-settings: "tnum"; }
+.slot-btn:hover { border-color: #C9D1DD; }
+.slot-btn.is-on { border-color: var(--brand); background: var(--brand-soft); box-shadow: inset 0 0 0 1px var(--brand); }
+.slot-btn.is-on b { color: var(--brand); }
+.cal-custom { display: flex; align-items: center; gap: 8px; }
+.cal-custom input { flex: 1; }
+.cal-save { align-self: stretch; padding: 9px; font-size: 13.5px; }
+.cal-pick-ov { position: fixed; inset: 0; background: rgba(23, 32, 51, .42); display: flex; align-items: center; justify-content: center; z-index: 80; padding: 16px; }
+.cal-pick { background: #fff; border-radius: 18px; width: 100%; max-width: 420px; padding: 22px; box-shadow: var(--float); display: flex; flex-direction: column; gap: 12px; }
+.cal-pick-title { font-size: 18px; font-weight: 800; }
+.cal-pick-sub { font-size: 12.5px; color: var(--ink-2); line-height: 1.6; }
+.cal-pick-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.cal-pick-person { appearance: none; display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: #fff; border-radius: 12px; padding: 10px 14px;
+  font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }
+.cal-pick-person:hover { border-color: var(--brand); color: var(--brand); }
+.cal-pick-new { display: flex; gap: 8px; }
+.cal-pick-new input { flex: 1; }
+.cal-pick-view { appearance: none; border: 0; background: none; color: var(--ink-2); font: inherit; font-size: 13px; cursor: pointer; text-decoration: underline; align-self: center; }
+@media (max-width: 1100px) { .cal-wrap { grid-template-columns: 1fr; } .cal-side { position: static; } }
+
+/* ── スマホ：切り替えは下のタブバーに ── */
+@media (max-width: 860px) {
+  body.app-page .top-bar { padding: 0 12px; height: 54px; }
+  .app-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; margin: 0; border-radius: 0; border: 0; border-top: 1px solid var(--line);
+    background: rgba(255, 255, 255, .96); backdrop-filter: blur(8px); padding: 4px 6px calc(4px + env(safe-area-inset-bottom)); justify-content: space-around; }
+  .app-nav-btn { flex-direction: column; gap: 2px; font-size: 10.5px; padding: 6px 4px; flex: 1; }
+  .app-nav-btn.is-active { box-shadow: none; background: transparent; }
+  body.app-page .app-shell { padding-bottom: 60px; }
+  body.app-page .filter-row { padding: 6px 12px 8px; }
+  body.app-page .search-wrap { padding: 10px 12px 4px; }
+  .layout-toggle button span { display: none; }
+  .filter-btn span { max-width: 92px; overflow: hidden; text-overflow: ellipsis; }
+  .cal-wrap { padding: 10px; gap: 10px; }
+  .cal-main { padding: 10px; }
+  .cal-cell { min-height: 64px; padding: 4px 3px; }
+  .cal-pill { font-size: 0; padding: 0; height: 6px; background: var(--c); border-radius: 3px; }
+  .cal-pill i { display: none; }
+  .cal-more { font-size: 10px; }
+  .cal-legend-note { display: none; }
+  .cal-title { font-size: 17px; min-width: 104px; }
+}
+
+/* 失注・保留・中止など「道の外」の段階は、つながりから離して別の形に */
+body.app-page .stage-step.is-side { clip-path: none; border-radius: 8px; margin-left: 10px; padding: 8px 12px; background: #fff; box-shadow: inset 0 0 0 1px var(--line); }
+body.app-page .stage-step.is-side:hover { box-shadow: inset 0 0 0 1px #C9D1DD; background: #fff; }
+body.app-page .stage-step.is-side.is-current { box-shadow: none; }
+body.app-page .stage-step.is-side + .stage-step.is-side { margin-left: 4px; }
+
+/* 名刺管理：一括選択の行を白に */
+body.app-page .bulk-select-bar { background: #fff; border-bottom: 1px solid var(--line); padding: 6px 18px; }
+
+@media (max-width: 860px) {
+  body.app-page .top-bar-count { display: none; }
+  body.app-page .top-bar-title { max-width: 38vw; font-size: 14px; }
+  body.app-page .top-bar-right { gap: 2px; }
+  body.app-page .top-bar-right .btn-ghost { padding: 7px 8px; }
+  body.app-page .sales-new-btn { padding: 7px 10px; }
+}
+
+/* 名刺の絞り込み: 1段目に すべて・最近登録・メモあり・重複候補・タグ、2段目に担当者（はみ出さず折り返す） */
+body.app-page #filterRow.filter-row { flex-wrap: wrap; overflow: visible; row-gap: 8px; }
+body.app-page #filterRow .tag-filter-group { flex-wrap: wrap; row-gap: 6px; }
+body.app-page #filterRow #assignedToFilterSep { display: none !important; }
+body.app-page #filterRow #assignedToFilterGroup { flex-basis: 100%; }
+body.app-page #filterRow #assignedToFilterGroup:empty { display: none; }
+@media (max-width: 860px) {
+  /* スマホは担当者の段だけ横にスクロール（縦に何段も積まない） */
+  body.app-page #filterRow #assignedToFilterGroup { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  body.app-page #filterRow #assignedToFilterGroup::-webkit-scrollbar { display: none; }
+}
+body.app-page #filterRow .filter-sep:has(+ #tagFilterGroup:empty) { display: none; }
+
+/* レスポンシブ点検（2026-10）: モーダル下部のボタンが縦に潰れないように */
+.email-footer-info { min-width: 0; flex: 1 1 auto; }
+.email-footer-actions { flex-shrink: 0; }
+.email-footer-actions > button, .email-modal-footer > button { white-space: nowrap; }
+@media (max-width: 520px) {
+  .email-modal-footer { flex-wrap: wrap; padding: 12px 16px; }
+  .email-footer-info { flex-basis: 100%; }
+  .email-footer-actions { margin-left: auto; }
+}
+/* 案件の名刺欄のリンクが1文字ずつ折れないように */
+.card-actions { flex-wrap: wrap; row-gap: 4px; }
+.card-actions .btn-link { white-space: nowrap; }
+/* 見積明細の見出しが縦書きにならないように */
+.items-table th, .qt-table th { white-space: nowrap; }
+/* 名刺の選択バー: 狭い画面でも「選択解除」の文字は出す（アイコンがないため空のボタンになっていた） */
+@media (max-width: 480px) {
+  #clearSelectionBtn .selection-btn-label { display: inline; white-space: nowrap; font-size: 12px; }
+  .selection-bar { max-width: calc(100vw - 24px); }
+}
+/* 名刺の「表示中の◯件を一括選択／選択解除」ボタンを1行に */
+#bulkSelectBar #cardSortBox { min-width: 0; flex: 0 1 auto; overflow: hidden; }
+#bulkSelectBar .bulk-select-btn { white-space: nowrap; flex-shrink: 0; }
+@media (max-width: 359px) { #bulkSelectBar .bulk-select-btn { white-space: normal; flex-shrink: 1; } }
+
+/* 予定: 終日（一日空いていない） */
+.cal-sum-row.is-allday { grid-column: 1 / -1; background: #FDECEA; border-color: #F5C2BD; }
+.cal-sum-row.is-allday span { color: #A12D2A; }
+.cal-sum-row.is-allday em { white-space: normal; }
+.cal-pill.is-allday { background: #FDECEA; color: #A12D2A; font-weight: 700; }
+.slot-btn.is-allday:not(.is-on) b { color: #A12D2A; }
+
+/* ============================================================
+   メリハリ（色の役割を決めて、ぱっと見で区別できるように）
+   ・青 = 操作・進行      ・紫 = メモとAI       ・青緑 = テレアポ業者
+   ・赤 = 期限切れ・失注  ・琥珀 = 今日・注意   ・橙 = 次の一手なし   ・緑 = できた・良い
+   ============================================================ */
+:root {
+  --violet: #6A46D9; --violet-soft: #F2EEFF; --violet-line: #D9CFFB;
+  --teal: #0B7F7A;   --teal-soft: #E2F5F3;   --teal-line: #B5E3DE;
+  --orange: #C2560C; --orange-soft: #FFF0E4;
+  --sky-soft: #EAF2FF;
+}
+.ic { display: inline-block; vertical-align: -2px; flex: none; }
+
+/* 見出し：左に色の棒 */
+body.app-page .section-label > span:first-child { display: inline-flex; align-items: center; gap: 8px; color: var(--ink); font-size: 13px; }
+body.app-page .section-label > span:first-child::before { content: ""; width: 4px; height: 14px; border-radius: 2px; background: var(--brand); flex: none; }
+
+/* 上のメニュー：今いる画面ははっきり塗る */
+.app-nav-btn.is-active { background: var(--brand); color: #fff; box-shadow: 0 2px 6px rgba(37, 86, 232, .28); }
+.app-nav-btn.is-active svg { color: #fff; }
+.app-nav-btn.is-active .nav-n { background: #fff; color: var(--red); }
+
+/* ── 今日やること ── */
+.td-title { font-size: 24px; letter-spacing: -.01em; }
+.td-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 4px 0 6px; }
+.td-tile { appearance: none; font: inherit; text-align: left; cursor: pointer; border: 0; border-radius: 12px; padding: 12px 14px 11px; display: flex; flex-direction: column; gap: 2px;
+  background: var(--c-soft); color: var(--c); box-shadow: inset 0 0 0 1px var(--c-line, transparent); transition: transform .12s; }
+.td-tile:hover:not(:disabled) { transform: translateY(-1px); }
+.td-tile b { font-size: 26px; font-weight: 800; line-height: 1.1; font-feature-settings: "tnum"; }
+.td-tile span { font-size: 12px; font-weight: 700; }
+.td-tile.is-zero { --c: var(--ink-3) !important; --c-soft: #fff !important; --c-line: var(--line) !important; cursor: default; }
+.t-red { --c: #B42318; --c-soft: #FDECEC; --c-line: #F7CFCF; }
+.t-amber { --c: #A15C00; --c-soft: #FFF4DE; --c-line: #F6DDA8; }
+.t-orange { --c: var(--orange); --c-soft: var(--orange-soft); --c-line: #F8D3B5; }
+.t-blue { --c: #1E4FD8; --c-soft: var(--sky-soft); --c-line: #CADBFD; }
+.td-sec { --sc: var(--ink-3); scroll-margin-top: 12px; }
+.td-late { --sc: #D23F3F; } .td-today { --sc: #E09100; } .td-none { --sc: #E0731F; } .td-week { --sc: #3B6FF5; } .td-news { --sc: var(--teal); }
+.td-sec-h { font-size: 14px; color: var(--ink); }
+.td-sec-h span { display: inline-flex; align-items: center; gap: 8px; }
+.td-sec-h span::before { content: ""; width: 10px; height: 10px; border-radius: 3px; background: var(--sc); flex: none; }
+.td-sec-h b { background: var(--sc) !important; color: #fff !important; }
+.td-today .td-sec-h { color: #8A4F00; } .td-week .td-sec-h { color: #1E4FD8; } .td-news .td-sec-h { color: var(--teal); }
+.td-sec .td-row { border-left: 4px solid var(--sc); box-shadow: none !important; }
+.td-sec .td-row:hover { box-shadow: 0 2px 10px rgba(23, 32, 51, .06) !important; }
+.td-due { padding: 3px 9px; border-radius: 999px; background: #F1F4F9; }
+.td-due.is-late { background: #FDECEC; } .td-due.is-today { background: #FFF4DE; }
+.td-news-row { border-left: 4px solid var(--teal) !important; }
+@media (max-width: 600px) { .td-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .td-tile b { font-size: 22px; } }
+
+/* ── メモ欄（紫 = メモとAI） ── */
+.mm { border-color: var(--violet-line); background: #FCFBFF; border-left: 4px solid var(--violet); }
+.mm:focus-within { box-shadow: 0 0 0 3px var(--violet-soft); }
+.mm-text::placeholder { color: #9A93B8; }
+#dgRun { background: var(--violet); border-color: var(--violet); color: #fff; }
+#dgRun:hover:not(:disabled) { background: #5934C8; border-color: #5934C8; }
+.mm-attach:hover { color: var(--violet); border-color: var(--violet); }
+.mm-mic.is-on { color: #fff; background: #D23F3F; border-color: #D23F3F; border-style: solid; }
+.mm.is-ready { border-color: var(--violet-line); border-left-color: var(--violet); box-shadow: 0 6px 22px rgba(106, 70, 217, .10); }
+.mm.is-busy { border-left-color: var(--violet); }
+.mm-title { color: var(--violet); }
+.mm-plan { background: var(--violet-soft); border: 1px solid var(--violet-line); }
+.mm-plan b { color: var(--violet); }
+.mm-plan span { border-color: var(--violet-line); color: #3C2A86; font-weight: 600; }
+.mm-ai { color: var(--violet); background: var(--violet-soft); }
+/* 提案の各段：番号の色で役割を分ける */
+.mm-step-n { background: var(--brand); }
+.mm-s1 .mm-step-n { background: var(--violet); }
+.mm-s3 .mm-step-n { background: #64748B; }
+.mm-step-n:has(.ic-phone) { background: var(--teal); }
+.mm-step-n:has(.ic-factory) { background: var(--orange); }
+.mm-step-t, .mm-next-t { color: var(--ink-2); font-size: 12.5px; }
+.mm-situ { font-size: 15.5px; color: var(--ink); }
+.mm-next { background: var(--sky-soft); border-radius: 10px; padding: 10px 12px; }
+.mm-next-what { font-weight: 800; color: #17337F; }
+.mm-appo { border-top-color: #CADBFD; }
+.mm-other { border-top: 1px solid var(--line); padding-top: 10px; }
+.mm-other > summary { color: var(--ink-2); font-weight: 700; }
+.mm-unclear { border-left: 3px solid #E09100; background: #FFF9EC; border-radius: 8px; padding: 8px 12px; }
+#dgApply { background: var(--violet); border-color: var(--violet); color: #fff; }
+#dgApply:hover:not(:disabled) { background: #5934C8; }
+
+/* ── テレアポ業者（青緑） ── */
+.vendor-badge { background: var(--teal-soft) !important; color: var(--teal) !important; display: inline-flex; align-items: center; gap: 3px; font-weight: 600; }
+body.app-page .vq-banner, body.app-page .vq-strip { background: var(--teal-soft); border-color: var(--teal-line); color: #075D59; border-left: 4px solid var(--teal); }
+body.app-page .vq-new { background: var(--teal); gap: 3px; }
+body.app-page .vq-mini > span { display: inline-flex; align-items: center; gap: 6px; color: var(--teal); }
+body.app-page .tl-badge.vendor { background: var(--teal-soft); color: var(--teal); }
+body.app-page .deal-row.is-vq-new { box-shadow: inset 4px 0 0 var(--teal) !important; }
+
+/* ── 部長の目 ── */
+body.app-page .boss-tiles .stat-tile { position: relative; overflow: hidden; background: #fff; }
+body.app-page .boss-tiles .stat-tile::before { content: ""; position: absolute; left: 0; top: 0; right: 0; height: 3px; background: var(--tc, var(--brand)); }
+body.app-page .boss-tiles .stat-tile:nth-child(8n+1) { --tc: #3B6FF5; } body.app-page .boss-tiles .stat-tile:nth-child(8n+2) { --tc: #6A46D9; }
+body.app-page .boss-tiles .stat-tile:nth-child(8n+3) { --tc: #0B7F7A; } body.app-page .boss-tiles .stat-tile:nth-child(8n+4) { --tc: #18804A; }
+body.app-page .boss-tiles .stat-tile:nth-child(8n+5) { --tc: #E09100; } body.app-page .boss-tiles .stat-tile:nth-child(8n+6) { --tc: #C2560C; }
+body.app-page .boss-tiles .stat-tile:nth-child(8n+7) { --tc: #1E4FD8; } body.app-page .boss-tiles .stat-tile:nth-child(8n+8) { --tc: #A3236D; }
+body.app-page .boss-tiles .stat-tile-label { color: var(--ink-2); font-weight: 600; }
+body.app-page .stat-tile-value { font-weight: 800; }
+body.app-page .stat-tile.tile-good .stat-tile-value { color: #067647; }
+body.app-page .stat-tile.tile-warn .stat-tile-value { color: #B54708; }
+body.app-page .stat-tile.tile-bad .stat-tile-value { color: #B42318; }
+.boss-card.c-violet { --bc: var(--violet); } .boss-card.c-red { --bc: #D23F3F; } .boss-card.c-blue { --bc: var(--brand); }
+.boss-card.c-amber { --bc: #E09100; } .boss-card.c-teal { --bc: var(--teal); } .boss-card.c-green { --bc: #18804A; }
+body.app-page .boss-card[class*="c-"] { border-top: 3px solid var(--bc); }
+body.app-page .boss-card[class*="c-"] .section-label > span:first-child::before { background: var(--bc); }
+body.app-page .boss-ai.team { background: linear-gradient(135deg, #F4F0FF, #EEF4FF); border: 1px solid var(--violet-line); }
+body.app-page .boss-ai-head { color: var(--violet); }
+.bar-fill.is-lost { background: #E0605A; }
+
+/* ── 一覧・詳細の小物 ── */
+body.app-page .due-badge { display: inline-flex; align-items: center; gap: 4px; }
+body.app-page .row-alert, body.app-page .alert-card > span:first-child { display: inline-flex; align-items: center; gap: 5px; }
+body.app-page .alert-card.level-high { border-left: 4px solid #D23F3F; }
+body.app-page .alert-card.level-mid { border-left: 4px solid #E09100; }
+body.app-page .alert-card.level-info { border-left: 4px solid #0E7090; }
+.site-line { display: flex; align-items: center; gap: 5px; }
+.deal-title { letter-spacing: -.01em; }
+body.app-page .vq-kind.is-on { border-color: var(--teal); box-shadow: 0 0 0 3px var(--teal-soft); }
+body.app-page .vq-purpose.is-on { background: var(--teal); border-color: var(--teal); }
+body.app-page .lst-share:not(.is-private) { background: var(--teal-soft); color: var(--teal); }
+
+/* 次に確かめること：答えを書ける ／ AIに直してほしいこと */
+.mm-unclear { display: grid; gap: 4px; }
+.mm-unclear > b { color: #8A4F00; }
+.mm-unclear ol { margin: 4px 0 0; padding-left: 20px; display: grid; gap: 8px; }
+.mm-unclear li::marker { color: #B86E00; font-weight: 700; }
+.mm-q { font-size: 13px; color: var(--ink); line-height: 1.6; }
+.mm-ans { margin-top: 4px; width: 100%; background: #fff; }
+.mm-fix { margin-top: 12px; display: grid; gap: 6px; padding: 10px 12px; border-radius: 10px; background: var(--violet-soft); border: 1px solid var(--violet-line); }
+.mm-fix label { font-size: 12.5px; font-weight: 800; color: var(--violet); }
+.mm-fix textarea { background: #fff; }
+.mm-redo { color: var(--violet); border-color: var(--violet); background: #fff; font-weight: 700; }
+.mm-redo:hover:not(:disabled) { background: var(--violet-soft); }
+.dg-actions { flex-wrap: wrap; }
+
+/* 予定の変更・削除 */
+.cal-item-btns { display: flex; gap: 4px; flex-shrink: 0; }
+.cal-item-btns .btn-sm { padding: 3px 9px; font-size: 12px; }
+.cal-del { color: var(--red) !important; }
+.cal-del:hover { background: var(--red-soft) !important; border-color: #F3B8B8 !important; }
+.cal-pill[data-ev] { cursor: pointer; }
+.cal-pill[data-ev]:hover { filter: brightness(.96); text-decoration: underline; }
+.cal-add.is-edit { background: var(--sky-soft); border: 1px solid #CADBFD; border-radius: 12px; padding: 12px; margin-top: 14px; }
+.cal-edit-row { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; align-items: center; }
+.cal-edit-row label { font-size: 12px; font-weight: 700; color: var(--ink-2); }
+.cal-edit-btns { display: flex; gap: 6px; align-items: center; }
+.cal-edit-btns > span { flex: 1; }

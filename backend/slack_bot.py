@@ -37,7 +37,13 @@ import sales
 
 log = logging.getLogger("slack_bot")
 
-STAGE_WORDS = ", ".join(sales.STAGES)
+STAGE_WORDS = " ／ ".join(f"{p['label']}: {', '.join(p['stages'])}" for p in sales.PIPELINES.values())
+
+
+def stage_words(deals: list) -> str:
+    """一覧にある案件の種類だけのステージ（会社で使わない種類は出さない）"""
+    keys = {d.get("pipeline") or "sales" for d in deals} or {"sales"}
+    return " ／ ".join(f"{p['label']}: {', '.join(p['stages'])}" for k, p in sales.PIPELINES.items() if k in keys)
 CARD_FIELDS = ["company", "name", "department_position", "email", "address", "mobile", "phone", "website", "name_kana"]
 FIELD_LABELS = {"company": "会社名", "name": "氏名", "department_position": "部署・役職", "email": "メール",
                 "address": "住所", "mobile": "携帯", "phone": "電話", "website": "サイト", "name_kana": "ふりがな"}
@@ -106,8 +112,23 @@ def _seen(event_id: str) -> bool:
 
 
 # ── Slack API ──
-def slack_api(method: str, payload: Optional[dict] = None, get: bool = False) -> dict:
-    token = env("SLACK_BOT_TOKEN")
+# 会社ごとに別のSlack（ワークスペース）でも動くように、トークンは会社ごとに持てる
+#   SLACK_BOT_TOKEN_<テナントID>=xoxb-...（なければ SLACK_BOT_TOKEN を使う）
+#   SLACK_SIGNING_SECRET_<テナントID>=...（受け取ったイベントの署名はどれかに合えばよい）
+import contextvars
+_TOKEN = contextvars.ContextVar("slack_token", default=None)
+
+
+def token_for_tenant(tenant: Optional[str]) -> str:
+    return (env(f"SLACK_BOT_TOKEN_{tenant}") if tenant else "") or env("SLACK_BOT_TOKEN")
+
+
+def token_for_channel(channel: Optional[str]) -> str:
+    return token_for_tenant(channel_tenants().get(channel or ""))
+
+
+def slack_api(method: str, payload: Optional[dict] = None, get: bool = False, token: Optional[str] = None) -> dict:
+    token = token or _TOKEN.get() or env("SLACK_BOT_TOKEN")
     if not token:
         log.warning("SLACK_BOT_TOKEN 未設定のため %s を送れません", method)
         return {"ok": False, "error": "no_token"}
@@ -135,7 +156,7 @@ def post(channel: str, thread_ts: Optional[str], text: str) -> dict:
     payload = {"channel": channel, "text": text, "unfurl_links": False, "unfurl_media": False}
     if thread_ts:
         payload["thread_ts"] = thread_ts
-    return slack_api("chat.postMessage", payload)
+    return slack_api("chat.postMessage", payload, token=token_for_channel(channel))
 
 
 def user_name(user_id: str) -> str:
@@ -148,7 +169,7 @@ def user_name(user_id: str) -> str:
 
 
 def download(url: str) -> bytes:
-    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {env('SLACK_BOT_TOKEN')}"})
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {_TOKEN.get() or env('SLACK_BOT_TOKEN')}"})
     with urllib.request.urlopen(req, timeout=60) as r:
         ctype = r.headers.get("Content-Type", "")
         data = r.read()
@@ -157,11 +178,15 @@ def download(url: str) -> bytes:
     return data
 
 
+def signing_secrets() -> list:
+    return [v for k, v in os.environ.items() if (k == "SLACK_SIGNING_SECRET" or k.startswith("SLACK_SIGNING_SECRET_")) and v]
+
+
 def verify_signature(headers, body: bytes) -> bool:
-    secret = env("SLACK_SIGNING_SECRET")
+    secrets_ = signing_secrets() or ([env("SLACK_SIGNING_SECRET")] if env("SLACK_SIGNING_SECRET") else [])
     ts = headers.get("x-slack-request-timestamp", "")
     sig = headers.get("x-slack-signature", "")
-    if not secret or not ts or not sig:
+    if not secrets_ or not ts or not sig:
         return False
     try:
         if abs(time.time() - int(ts)) > 300:
@@ -169,8 +194,7 @@ def verify_signature(headers, body: bytes) -> bool:
     except ValueError:
         return False
     base = f"v0:{ts}:".encode() + body
-    expected = "v0=" + hmac.new(secret.encode(), base, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(expected, sig)
+    return any(hmac.compare_digest("v0=" + hmac.new(sec.encode(), base, hashlib.sha256).hexdigest(), sig) for sec in secrets_)
 
 
 # ── AI ──
@@ -243,11 +267,12 @@ def extract_card(jpeg: bytes) -> dict:
 def parse_report(text: str, deals: list, today: date) -> dict:
     lines = []
     for d in deals:
-        lines.append(f"#{d['id']} | {d['company'] or ''} | {d['contact'] or ''} | {d['title']} | {d['stage']}")
+        kind = sales.pipeline_of(d.get("pipeline") or "sales")["label"]
+        lines.append(f"#{d['id']} | {kind} | {d['company'] or ''} | {d['contact'] or ''} | {d['title']} | {d['stage']}")
     prompt = (
         "営業チャンネルへの投稿を読み、どの案件についての報告かを判定してください。\n"
         f"今日は {today.isoformat()}（{'月火水木金土日'[today.weekday()]}曜日）です。\n\n"
-        "# 進行中の案件（#ID | 会社 | 担当者 | 案件名 | ステージ）\n" + ("\n".join(lines) or "（なし）") + "\n\n"
+        "# 進行中の案件（#ID | 種類 | 会社 | 担当者 | 案件名 | ステージ）\n" + ("\n".join(lines) or "（なし）") + "\n\n"
         f"# 投稿\n{text}\n\n"
         "# 出力（JSONのみ）\n"
         '{"is_report": true/false, "deal_id": 数値またはnull, "confidence": "high|medium|low",'
@@ -259,7 +284,7 @@ def parse_report(text: str, deals: list, today: date) -> dict:
         "- 雑談・連絡・質問など営業の報告でなければ is_report を false\n"
         "- deal_id は会社名や担当者名がはっきり一致する案件が1つだけのとき。複数ありうる・名前がないときは null にして candidates に候補\n"
         "- confidence は deal_id に確信があるときだけ high\n"
-        f"- stage は投稿で明確に進んだときだけ。使える値: {STAGE_WORDS}\n"
+        f"- stage は投稿で明確に進んだときだけ。案件の種類ごとに使える値が違う: {stage_words(deals)}\n"
         f"- 失注のときは lost_reason を {', '.join(sales.LOST_REASONS)} から選ぶ。分からなければ その他\n"
         "- 「来週火曜」などの日付は今日を基準に YYYY-MM-DD に直す。曖昧なら null にして unclear に書く\n"
         "- 投稿にない事実を作らない"
@@ -282,6 +307,25 @@ class SlackHandler:
         self.image_path_for = image_path_for
 
     # 入口
+    def member_for(self, tenant: str, user_id: Optional[str]) -> Optional[str]:
+        """Slackの投稿者を自社メンバー（担当者）に対応づける。初回は表示名で探して Slack ID を覚える"""
+        if not user_id:
+            return None
+        with sales._conn() as c:
+            row = c.execute("SELECT name FROM members WHERE tenant_id=? AND slack_id=?", (tenant, user_id)).fetchone()
+            if row:
+                return row["name"]
+            uname = user_name(user_id)
+            if not uname:
+                return None
+            norm = lambda x: re.sub(r"\s", "", x or "").lower()
+            for m in c.execute("SELECT id, name, slack_name FROM members WHERE tenant_id=? AND slack_id IS NULL", (tenant,)):
+                if norm(uname) in (norm(m["slack_name"]), norm(m["name"])):
+                    c.execute("UPDATE members SET slack_id=? WHERE id=?", (user_id, m["id"]))
+                    c.commit()
+                    return m["name"]
+        return None
+
     def handle_event(self, ev: dict):
         tenants = channel_tenants()
         channel = ev.get("channel")
@@ -291,23 +335,28 @@ class SlackHandler:
                                                       "channel_join", "channel_leave"):
             return
         tenant = tenants[channel]
+        _TOKEN.set(token_for_tenant(tenant))   # このあとの Slack API はこの会社のSlackへ
         ts = ev.get("ts")
         thread_ts = ev.get("thread_ts")
         text = (ev.get("text") or "").strip()
         files = ev.get("files") or []
         try:
+            try:
+                owner = self.member_for(tenant, ev.get("user"))
+            except Exception:
+                owner = None
             if thread_ts and thread_ts != ts:
-                self.handle_thread_reply(tenant, channel, thread_ts, text)
+                self.handle_thread_reply(tenant, channel, thread_ts, text, owner)
             elif files:
-                self.handle_files(tenant, channel, ts, files, ev.get("user"), text)
+                self.handle_files(tenant, channel, ts, files, ev.get("user"), text, owner)
             elif text:
-                self.handle_report(tenant, channel, ts, text)
+                self.handle_report(tenant, channel, ts, text, owner)
         except Exception as e:
             log.exception("Slack処理エラー")
             post(channel, thread_ts or ts, f":warning: 処理中にエラーが起きました: {e}")
 
     # 名刺の画像・資料ファイル
-    def handle_files(self, tenant, channel, ts, files, user_id, text):
+    def handle_files(self, tenant, channel, ts, files, user_id, text, owner=None):
         import intake
         images = [f for f in files if (f.get("mimetype") or "") in IMAGE_TYPES]
         docs = [f for f in files if f not in images
@@ -330,11 +379,11 @@ class SlackHandler:
             post(channel, ts, "\n".join(results))
         for f in docs:
             # 資料に添えた文章は補足としてAIに渡す
-            self.handle_document(tenant, channel, ts, f, text)
+            self.handle_document(tenant, channel, ts, f, text, owner)
         if not images and not docs and text:
-            self.handle_report(tenant, channel, ts, text)
+            self.handle_report(tenant, channel, ts, text, owner)
 
-    def handle_document(self, tenant, channel, ts, f, text):
+    def handle_document(self, tenant, channel, ts, f, text, owner=None):
         import intake
         from fastapi import HTTPException
         name = f.get("name") or "資料"
@@ -397,21 +446,22 @@ class SlackHandler:
         with sales._conn() as c:
             c.execute("""INSERT INTO slack_actions (tenant_id, channel, thread_ts, kind, status, parse, message, created_at)
                 VALUES (?,?,?,?,?,?,?,?)""", (tenant, channel, ts, "intake", "pending",
-                                              json.dumps({"job_id": job_id}), name, sales._now()))
+                                              json.dumps({"job_id": job_id, "owner": owner}), name, sales._now()))
             c.commit()
 
-    def apply_intake(self, tenant, channel, thread_ts, action: dict):
+    def apply_intake(self, tenant, channel, thread_ts, action: dict, owner=None):
         import intake
         from fastapi import HTTPException
         job_id = json.loads(action["parse"])["job_id"]
         try:
             job = intake.job_view(tenant, job_id, self.fetch_cards(tenant))
-            decisions = intake.default_decisions(job["items"])
+            decisions = intake.default_decisions(job["items"], json.loads(action["parse"]).get("owner") or owner)
             if not any(d.action != "skip" for d in decisions):
                 post(channel, thread_ts, "名刺が確定したものがありません。画面で確認してください: "
                      f"{app_url()}/sales.html?intake={job_id}")
                 return
-            res = intake.apply_decisions(tenant, job_id, decisions, self.fetch_cards(tenant))
+            own = (self.get_tenant(tenant) or {}).get("display_name") or tenant
+            res = intake.apply_decisions(tenant, job_id, decisions, self.fetch_cards(tenant), own)
         except HTTPException as e:
             post(channel, thread_ts, f":warning: {e.detail}")
             return
@@ -488,13 +538,14 @@ class SlackHandler:
     # 文章の報告
     def open_deals(self, tenant) -> list:
         with sales._conn() as c:
-            rows = c.execute("""SELECT id, company_snapshot, contact_snapshot, title, stage FROM deals
-                WHERE tenant_id=? AND stage NOT IN ('受注','失注') ORDER BY updated_at DESC LIMIT 300""",
-                             (tenant,)).fetchall()
+            closed = sorted(sales.CLOSED_STAGES)
+            rows = c.execute(f"""SELECT id, company_snapshot, contact_snapshot, title, stage, pipeline FROM deals
+                WHERE tenant_id=? AND stage NOT IN ({','.join('?' * len(closed))})
+                ORDER BY updated_at DESC LIMIT 300""", [tenant] + closed).fetchall()
         return [{"id": r["id"], "company": r["company_snapshot"], "contact": r["contact_snapshot"],
-                 "title": r["title"], "stage": r["stage"]} for r in rows]
+                 "title": r["title"], "stage": r["stage"], "pipeline": r["pipeline"]} for r in rows]
 
-    def handle_report(self, tenant, channel, ts, text):
+    def handle_report(self, tenant, channel, ts, text, owner=None):
         deals = self.open_deals(tenant)
         p = parse_report(text, deals, date.today())
         if not p.get("is_report"):
@@ -502,14 +553,14 @@ class SlackHandler:
         ids = {d["id"] for d in deals}
         deal_id = p.get("deal_id")
         if deal_id in ids and p.get("confidence") == "high":
-            msg = self.apply_report(tenant, channel, ts, deal_id, p, text)
+            msg = self.apply_report(tenant, channel, ts, deal_id, p, text, owner)
             post(channel, ts, msg + "\n_違っていたら このスレッドに「取消」と返信してください_")
             return
         # 特定できない → 保留して聞き返す
         with sales._conn() as c:
             c.execute("""INSERT INTO slack_actions (tenant_id, channel, thread_ts, kind, status, parse, message, created_at)
                 VALUES (?,?,?,?,?,?,?,?)""", (tenant, channel, ts, "report", "pending",
-                                             json.dumps(p, ensure_ascii=False), text, sales._now()))
+                                             json.dumps({**p, "_owner": owner}, ensure_ascii=False), text, sales._now()))
             c.commit()
         cands = [d for d in deals if d["id"] in (p.get("candidates") or [])][:5]
         lines = [":question: どの案件の報告か特定できませんでした。記録はまだしていません。"]
@@ -523,7 +574,7 @@ class SlackHandler:
             lines.append(f"判断できなかった点: {'／'.join(p['unclear'])}")
         post(channel, ts, "\n".join(lines))
 
-    def apply_report(self, tenant, channel, ts, deal_id, p, text) -> str:
+    def apply_report(self, tenant, channel, ts, deal_id, p, text, owner=None) -> str:
         kind = p.get("kind") if p.get("kind") in sales.USER_ACTIVITY_KINDS else "memo"
         title = (p.get("title") or "Slackからの報告")[:200]
         body = (p.get("summary") or "").strip()
@@ -531,17 +582,22 @@ class SlackHandler:
         notes = []
         with sales._conn() as c:
             row = dict(sales._get_deal_row(c, tenant, deal_id))
-            prev = {k: row[k] for k in ("stage", "next_action", "next_action_due", "lost_reason", "lost_detail", "closed_at")}
+            prev = {k: row[k] for k in ("stage", "next_action", "next_action_due", "lost_reason", "lost_detail", "closed_at",
+                                        "owner", "stage_changed_at", "max_stage_idx")}
             before = c.execute("SELECT COALESCE(MAX(id),0) m FROM activities").fetchone()["m"]
             sales.log_activity(c, tenant, deal_id, kind, title, body[:20000])
             sets = {}
             stage = p.get("stage")
-            if stage and stage in sales.STAGES and stage != row["stage"]:
+            pl = sales.pipeline_of(row)
+            if stage and stage not in pl["stages"]:
+                notes.append(f"「{stage}」は{pl['label']}のステージではないので変えていません")
+                stage = None
+            if stage and stage != row["stage"]:
                 reason = p.get("lost_reason") if p.get("lost_reason") in sales.LOST_REASONS else None
-                if stage == "失注" and not reason:
+                if stage == pl["lost"] and pl["reason_required"] and not reason:
                     reason = "その他"
                     notes.append("失注理由が分からないため「その他」にしました")
-                if stage == "失注":
+                if stage == pl["lost"]:
                     sets["lost_reason"] = reason
                     sets["lost_detail"] = (p.get("summary") or "")[:1000] or None
                 sales.change_stage(c, tenant, deal_id, row["stage"], stage, sets,
@@ -555,6 +611,8 @@ class SlackHandler:
                         sets["next_action_due"] = sales._clean_date(due)
                     except Exception:
                         notes.append(f"日付「{due}」を読み取れませんでした")
+            if owner and not row.get("owner") and owner in sales.member_names(c, tenant):
+                sets["owner"] = owner   # Slackで報告した人を担当者に
             sales.apply_sets(c, tenant, deal_id, sets)
             new_ids = [r["id"] for r in c.execute(
                 "SELECT id FROM activities WHERE id>? AND deal_id=?", (before, deal_id)).fetchall()]
@@ -581,7 +639,7 @@ class SlackHandler:
         return "\n".join(lines)
 
     # スレッドへの返信（取消・#番号）
-    def handle_thread_reply(self, tenant, channel, thread_ts, text):
+    def handle_thread_reply(self, tenant, channel, thread_ts, text, owner=None):
         t = text.strip()
         with sales._conn() as c:
             acts = [dict(r) for r in c.execute("""SELECT * FROM slack_actions WHERE channel=? AND thread_ts=?
@@ -591,7 +649,7 @@ class SlackHandler:
         if t in ADD_WORDS:
             target = next((a for a in acts if a["kind"] == "intake" and a["status"] == "pending"), None)
             if target:
-                self.apply_intake(tenant, channel, thread_ts, target)
+                self.apply_intake(tenant, channel, thread_ts, target, owner)
             return
         if t in UNDO_WORDS:
             if any(a["kind"] == "intake" and a["status"] == "resolved" for a in acts) and \
@@ -616,7 +674,9 @@ class SlackHandler:
             if deal_id not in ids:
                 post(channel, thread_ts, f"#{deal_id} は進行中の案件に見つかりません")
                 return
-            msg = self.apply_report(tenant, channel, thread_ts, deal_id, json.loads(target["parse"]), target["message"])
+            parsed = json.loads(target["parse"])
+            msg = self.apply_report(tenant, channel, thread_ts, deal_id, parsed, target["message"],
+                                    parsed.pop("_owner", None) or owner)
             with sales._conn() as c:
                 c.execute("UPDATE slack_actions SET status='resolved' WHERE id=?", (target["id"],))
                 c.commit()
@@ -648,7 +708,7 @@ def build_router(handler: SlackHandler) -> APIRouter:
             return JSONResponse({"error": "bad json"}, status_code=400)
         # 初回のURL確認（署名シークレット未設定でも応答できるようにする）
         if payload.get("type") == "url_verification" and (
-                not env("SLACK_SIGNING_SECRET") or verify_signature(request.headers, body)):
+                not signing_secrets() or verify_signature(request.headers, body)):
             return {"challenge": payload.get("challenge")}
         if not verify_signature(request.headers, body):
             return JSONResponse({"error": "invalid signature"}, status_code=401)
@@ -664,30 +724,146 @@ def build_router(handler: SlackHandler) -> APIRouter:
 
 
 # ── 毎朝の要対応通知 ──
+def tenant_channel(tenant: str) -> Optional[str]:
+    return next((ch for ch, t in channel_tenants().items() if t == tenant), None)
+
+
+def slack_esc(v) -> str:
+    """Slack の書式として解釈されないように（業者や名刺から入った文字）"""
+    return str(v or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("|", "｜")
+
+
+def on_stage_change(info: dict):
+    """受注したら #営業 にお知らせ（設定でオフにできる）"""
+    if not info.get("won") or (info.get("pipeline") or "sales") != "sales":
+        return
+    channel = tenant_channel(info["tenant_id"])
+    if not channel or not token_for_channel(channel):
+        return
+    with sales._conn() as c:
+        row = c.execute("SELECT notify_won FROM sales_settings WHERE tenant_id=?", (info["tenant_id"],)).fetchone()
+        if row and not row["notify_won"]:
+            return
+        sid = None
+        if info.get("owner"):
+            m = c.execute("SELECT slack_id FROM members WHERE tenant_id=? AND name=?", (info["tenant_id"], info["owner"])).fetchone()
+            sid = m["slack_id"] if m else None
+    amt = f" {info['amount']:,}円" if info.get("amount") else ""
+    who = f"<@{sid}>" if sid else (info.get("owner") or "")
+    text = (f":tada: *受注しました！* <{app_url()}/sales.html?deal={info['id']}|#{info['id']} "
+            f"{slack_esc(info.get('company_snapshot'))}｜{slack_esc(info.get('title'))}>{amt}" + (f"（担当 {slack_esc(who) if not sid else who}）" if who else ""))
+    import threading
+    threading.Thread(target=lambda: post(channel, None, text), daemon=True).start()
+
+
+# 受注のお知らせは使わない（Slack に流すのはテレアポ業者の記録だけ）
+if on_stage_change in sales.STAGE_HOOKS:
+    sales.STAGE_HOOKS.remove(on_stage_change)
+
+
+def _nolink(v) -> str:
+    """業者が入れた文字をリンクにしない（URLっぽい文字を崩す）"""
+    t = slack_esc(v)
+    return re.sub(r"(?i)(https?)://", "\\1:/\u200b/", t).replace("www.", "www\u200b.")
+
+
+def on_vendor_event(info: dict):
+    """テレアポ業者が記録したら #営業 にお知らせ"""
+    channel = tenant_channel(info["tenant_id"])
+    if not channel or not token_for_channel(channel):
+        return
+    if info.get("kind") == "list":
+        text = (f":clipboard: *テレアポ業者がリストを共有しました*（{slack_esc(info.get('vendor'))}）\n"
+                f"<{app_url()}/sales.html?view=lists|{_nolink(info.get('company'))}>｜{_nolink(info.get('title'))}")
+        import threading
+        threading.Thread(target=lambda: post(channel, None, text), daemon=True).start()
+        return
+    if info.get("kind") == "request":
+        text = (f":telephone_receiver: *テレアポ業者から: {slack_esc(info.get('what'))}*（{slack_esc(info.get('vendor'))}）\n"
+                f"<{app_url()}/sales.html?deal={info['deal_id']}|#{info['deal_id']} {_nolink(info.get('company'))}>｜{_nolink(info.get('detail'))}")
+        import threading
+        threading.Thread(target=lambda: post(channel, None, text), daemon=True).start()
+        return
+    ap = info.get("appo_at") or ""
+    appo = f" ／ アポ {int(ap[5:7])}/{int(ap[8:10])}{(' ' + ap[11:16]) if len(ap) >= 16 else ''}" if len(ap) >= 10 else ""
+    head = ":telephone_receiver: *テレアポ業者から新しい記録*" if info.get("new") else ":telephone_receiver: テレアポ業者が記録を追加"
+    text = (f"{head}（{slack_esc(info.get('vendor'))}）\n<{app_url()}/sales.html?deal={info['deal_id']}|#{info['deal_id']} "
+            f"{_nolink(info.get('company'))}>｜{_nolink(info.get('title'))}{appo}")
+    import threading
+    threading.Thread(target=lambda: post(channel, None, text), daemon=True).start()
+
+
+try:
+    import vendor as _vendor
+    if on_vendor_event not in _vendor.VENDOR_HOOKS:
+        _vendor.VENDOR_HOOKS.append(on_vendor_event)
+except ImportError:
+    pass
+
+
+def boss_review(tenant: str, today: date) -> dict:
+    """営業部長の総評（ルール）を名刺なしで計算する（朝の通知用）"""
+    import advisor
+    with sales._conn() as c:
+        settings = sales._get_settings(c, tenant)
+        rows = c.execute("SELECT * FROM deals WHERE tenant_id=?", (tenant,)).fetchall()
+        acts_by_deal = {}
+        for a in c.execute("""SELECT id, deal_id, kind, occurred_at, awaiting_reply, replied_at FROM activities
+                WHERE tenant_id=? ORDER BY occurred_at DESC, id DESC""", (tenant,)):
+            acts_by_deal.setdefault(a["deal_id"], []).append(dict(a))
+    deals = []
+    for row in rows:
+        acts = acts_by_deal.get(row["id"], [])
+        d = sales._deal_dict(row, None, acts[0]["occurred_at"] if acts else None,
+                             sales.compute_alerts(dict(row), acts, settings, today))
+        d["advice"] = advisor.deal_advice(d, acts, settings, today)
+        deals.append(d)
+    return advisor.team_review(deals, acts_by_deal, settings, today)
+
+
 def notify_alerts(today: Optional[date] = None) -> int:
+    import advisor
     today = today or date.today()
     sent = 0
     for channel, tenant in channel_tenants().items():
         with sales._conn() as c:
             settings = sales._get_settings(c, tenant)
-            deals = [dict(r) for r in c.execute("""SELECT * FROM deals WHERE tenant_id=?
-                AND stage NOT IN ('受注','失注')""", (tenant,)).fetchall()]
+            closed = sorted(sales.CLOSED_STAGES)
+            deals = [dict(r) for r in c.execute(f"""SELECT * FROM deals WHERE tenant_id=?
+                AND stage NOT IN ({','.join('?' * len(closed))})""", [tenant] + closed).fetchall()]
             items = []
             for d in deals:
                 acts = sales.deal_acts(c, tenant, d["id"])
                 alerts = [a for a in sales.compute_alerts(d, acts, settings, today) if a["level"] != "info"]
                 if alerts:
                     items.append((d, alerts))
-        if not items:
+        lines = []
+        if items:
+            with sales._conn() as c:
+                mention = {r["name"]: r["slack_id"] for r in c.execute(
+                    "SELECT name, slack_id FROM members WHERE tenant_id=?", (tenant,))}
+            items.sort(key=lambda x: (0 if x[0].get("owner") else 1, x[0].get("owner") or "", 0 if any(a["type"] == "no_reply" for a in x[1]) else 1, x[0]["id"]))
+            lines.append(f":bell: *要対応の案件が {len(items)} 件あります*（{today.month}/{today.day}）")
+            cur_owner = object()
+            for d, alerts in items[:40]:
+                if (d.get("owner") or "") != cur_owner:
+                    cur_owner = d.get("owner") or ""
+                    who = (f"<@{mention[cur_owner]}>" if mention.get(cur_owner) else cur_owner) if cur_owner else "担当なし"
+                    lines.append(f"\n*{who}*")
+                msg = " ／ ".join(a["message"] for a in alerts)
+                lines.append(f"• <{app_url()}/sales.html?deal={d['id']}|{d['company_snapshot'] or ''} {d['contact_snapshot'] or ''}>"
+                             f"｜{d['title']} — {msg}")
+            if len(items) > 40:
+                lines.append(f"ほか {len(items) - 40} 件は営業画面で確認してください")
+        try:
+            boss = advisor.slack_lines(boss_review(tenant, today), app_url())
+        except Exception:
+            log.exception("部長の総評の計算に失敗")
+            boss = []
+        if boss:
+            lines += ([""] if lines else []) + boss
+        if not lines:
             continue
-        items.sort(key=lambda x: (0 if any(a["type"] == "no_reply" for a in x[1]) else 1, x[0]["id"]))
-        lines = [f":bell: *要対応の案件が {len(items)} 件あります*（{today.month}/{today.day}）"]
-        for d, alerts in items[:30]:
-            msg = " ／ ".join(a["message"] for a in alerts)
-            lines.append(f"• <{app_url()}/sales.html?deal={d['id']}|{d['company_snapshot'] or ''} {d['contact_snapshot'] or ''}>"
-                         f"｜{d['title']} — {msg}")
-        if len(items) > 30:
-            lines.append(f"ほか {len(items) - 30} 件は営業画面で確認してください")
         post(channel, None, "\n".join(lines))
         sent += 1
     return sent
@@ -698,6 +874,9 @@ if __name__ == "__main__":
     from dotenv import load_dotenv
     load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
     logging.basicConfig(level=logging.INFO)
+    if len(sys.argv) > 1 and sys.argv[1] == "notify" and env("SALES_MORNING_NOTIFY") != "1":
+        print("朝の要対応通知は止めています（使うときは .env に SALES_MORNING_NOTIFY=1）")
+        sys.exit(0)
     if len(sys.argv) > 1 and sys.argv[1] == "notify":
         if date.today().weekday() >= 5:
             sys.exit(0)
@@ -706,3 +885,36 @@ if __name__ == "__main__":
         print(f"通知したチャンネル: {notify_alerts()}")
     else:
         print("使い方: python slack_bot.py notify")
+
+
+def on_login_alert(info: dict):
+    """ログインの失敗が続いたら知らせる（SLACK_SECURITY_CHANNEL があればそこ、なければその会社の #営業）"""
+    channel = env("SLACK_SECURITY_CHANNEL").strip() or (tenant_channel(info.get("tenant_id") or "") if info.get("tenant_id") else None)
+    if not channel:
+        return
+    token = token_for_channel(channel) or token_for_tenant(info.get("tenant_id"))
+    if not token:
+        return
+    where = slack_esc(info.get("label") or ("業者画面" if info.get("scope") == "partner" else "名刺・営業アプリ"))
+    ip = slack_esc(info.get("ip"))
+    if info.get("kind") == "attack":
+        text = (f":rotating_light: *ログインの失敗が多発しています*（{where}）\n"
+                f"15分で{info.get('count')}回・{info.get('ips')}か所から。パスワードを総当たりされている可能性があります。"
+                f"続くようならパスワードの変更を検討してください")
+    else:
+        text = (f":lock: *ログインを一時ロックしました*（{where}）\n"
+                f"同じ相手（IP {ip}）が{'アカウントを変えながら' if info.get('by_ip') else ''}パスワードを{info.get('count')}回まちがえたため15分止めています。"
+                f"心当たりがなければそのままで大丈夫です（本人なら15分後に入れます）")
+    payload = {"channel": channel, "text": text, "unfurl_links": False, "unfurl_media": False}
+    try:
+        slack_api("chat.postMessage", payload, token=token)
+    except Exception:
+        pass
+
+
+try:
+    import loginguard as _lg
+    if on_login_alert not in _lg.HOOKS:
+        _lg.HOOKS.append(on_login_alert)
+except ImportError:
+    pass

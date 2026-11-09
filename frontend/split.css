@@ -1,0 +1,10 @@
+/* 一覧と詳細の幅（split.js） */
+@media (min-width: 861px) {
+  .main-grid.has-split { grid-template-columns: minmax(260px, var(--split, 43%)) 7px minmax(0, 1fr); }
+  .split-handle { cursor: col-resize; background: var(--bg-page); border-left: 1px solid var(--border); border-right: 1px solid var(--border); position: relative; touch-action: none; }
+  .split-handle::after { content: ''; position: absolute; top: 50%; left: 2px; width: 1px; height: 28px; margin-top: -14px; border-left: 1px solid var(--gray-300); border-right: 1px solid var(--gray-300); width: 1px; }
+  .split-handle:hover, .split-handle:focus-visible { background: var(--accent-light-2, #e8eefc); outline: none; }
+  .main-grid.has-split .pane-list { border-right: none; }
+  body.is-splitting { cursor: col-resize; user-select: none; }
+}
+@media (max-width: 860px) { .split-handle { display: none; } }

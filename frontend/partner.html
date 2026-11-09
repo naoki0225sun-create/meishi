@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>テレアポ報告</title>
+<style>
+  :root { --ink: #111827; --sub: #6b7280; --line: #e5e7eb; --bg: #f6f7fb; --card: #fff; --accent: #2556E8; --accent-l: #eef2ff;
+    --pink: #a3236d; --pink-l: #fdf2f8; --ok: #1d7a36; --ok-l: #e8f6ec; --warn: #9a5b00; --warn-l: #fff4e0; --red: #c0262d; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--ink); font-family: "Inter", "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif; font-size: 14px; }
+  button, input, select, textarea { font: inherit; }
+  .btn { appearance: none; border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 8px 14px; cursor: pointer; color: var(--ink); }
+  .btn:hover { border-color: #cbd5e1; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+  .btn.primary:disabled { opacity: .6; cursor: default; }
+  .btn.link { border: 0; background: none; color: var(--accent); padding: 4px 6px; }
+  .in { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; background: #fff; outline: none; }
+  .in:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-l); }
+  textarea.in { resize: vertical; min-height: 90px; line-height: 1.6; }
+  label.f { display: block; font-size: 12px; color: var(--sub); margin: 10px 0 4px; font-weight: 600; }
+  label.f b { color: var(--red); }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  /* login */
+  .login { min-height: 100%; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .login-box { width: 100%; max-width: 380px; background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 28px; box-shadow: 0 10px 30px rgba(17,24,39,.06); }
+  .login-box h1 { margin: 0 0 4px; font-size: 20px; }
+  .login-box p { margin: 0 0 18px; color: var(--sub); font-size: 13px; line-height: 1.6; }
+  .err { color: var(--red); font-size: 13px; margin-top: 10px; min-height: 1em; }
+
+  /* app */
+  .top { position: sticky; top: 0; z-index: 5; background: #fff; border-bottom: 1px solid var(--line); padding: 12px 20px; display: flex; align-items: center; gap: 12px; }
+  .top .logo { width: 34px; height: 34px; border-radius: 10px; background: var(--pink-l); color: var(--pink); display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+  .top .t1 { font-weight: 700; font-size: 15px; }
+  .top .t2 { color: var(--sub); font-size: 12px; }
+  .top .sp { flex: 1; }
+  .bar { display: flex; gap: 8px; padding: 14px 20px 6px; align-items: center; flex-wrap: wrap; max-width: 1280px; margin: 0 auto; }
+  .bar .in { max-width: 280px; }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+  .tab { appearance: none; border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 5px 12px; font-size: 12.5px; cursor: pointer; color: var(--sub); }
+  .tab.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .tab .n { font-weight: 700; margin-left: 4px; }
+  .list-wrap, .panel-wrap { min-width: 0; }
+  .kv > div, .panel h2, .item .co, .item .r3, .reason, .phint, .tl-b { overflow-wrap: anywhere; }
+  .main { display: grid; grid-template-columns: minmax(300px, 4fr) minmax(0, 6fr); gap: 16px; padding: 8px 20px 30px; max-width: 1280px; margin: 0 auto; align-items: start; }
+  .list { display: flex; flex-direction: column; gap: 8px; }
+  .item { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; cursor: pointer; transition: border-color .15s; }
+  .item:hover { border-color: #c7d2fe; }
+  .item.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-l); }
+  .item .r1 { display: flex; gap: 8px; align-items: center; }
+  .item .co { font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .r2 { color: var(--sub); font-size: 12.5px; margin-top: 4px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .item .r3 { font-size: 12.5px; margin-top: 6px; color: var(--ink); }
+  .stage { font-size: 11px; font-weight: 700; border-radius: 6px; padding: 2px 8px; background: #f1f5f9; color: #334155; white-space: nowrap; }
+  .stage.s-テレアポ { background: var(--pink-l); color: var(--pink); }
+  .stage.s-アポ, .stage.s-ヒアリング { background: var(--accent-l); color: var(--accent); }
+  .stage.s-見積提出 { background: var(--warn-l); color: var(--warn); }
+  .stage.s-受注 { background: var(--ok-l); color: var(--ok); }
+  .stage.s-失注, .stage.s-保留 { background: #f3f4f6; color: #6b7280; }
+  .new { font-size: 11px; font-weight: 700; color: #fff; background: #f59e0b; border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+  .panel { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 20px 22px; position: sticky; top: 76px; max-height: calc(100vh - 92px); overflow: auto; }
+  .panel h2 { margin: 0; font-size: 19px; }
+  .panel .sub { color: var(--sub); margin-top: 4px; }
+  .kv { display: grid; grid-template-columns: 96px 1fr; gap: 6px 12px; margin: 14px 0; font-size: 13.5px; }
+  .kv .k { color: var(--sub); }
+  .sec { margin-top: 20px; }
+  .sec-t { font-size: 12px; font-weight: 700; color: var(--sub); margin-bottom: 8px; letter-spacing: .04em; }
+  .tl { border-left: 2px solid var(--line); margin-left: 6px; padding-left: 14px; }
+  .tl-i { position: relative; padding: 0 0 14px; }
+  .tl-i::before { content: ''; position: absolute; left: -20px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: #cbd5e1; border: 2px solid #fff; }
+  .tl-i.mine::before { background: var(--pink); }
+  .tl-i.ours::before { background: var(--accent); }
+  .tl-h { font-size: 12px; color: var(--sub); display: flex; gap: 8px; flex-wrap: wrap; }
+  .tl-h .who { font-weight: 700; }
+  .tl-h .who.mine { color: var(--pink); }
+  .tl-h .who.ours { color: var(--accent); }
+  .tl-t { font-weight: 600; margin-top: 2px; }
+  .tl-b { white-space: pre-wrap; margin-top: 4px; line-height: 1.6; color: #374151; }
+  .empty { color: var(--sub); text-align: center; padding: 40px 10px; }
+  .form { background: #fafbff; border: 1px solid #e0e7ff; border-radius: 14px; padding: 14px 16px; }
+  .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+  .modal { position: fixed; inset: 0; background: rgba(17,24,39,.45); display: none; align-items: flex-start; justify-content: center; z-index: 20; padding: 30px 14px; overflow: auto; }
+  .modal.open { display: flex; }
+  .modal-box { background: #fff; border-radius: 18px; width: 100%; max-width: 620px; padding: 22px 24px; }
+  .modal-box h3 { margin: 0 0 4px; font-size: 18px; }
+  .note { font-size: 12px; color: var(--sub); line-height: 1.6; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #111827; color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 13px; z-index: 30; display: none; }
+  .back { display: none; }
+  .views { display: flex; gap: 2px; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 3px; }
+  .views button { appearance: none; border: 0; background: transparent; border-radius: 9px; padding: 6px 14px; font-weight: 700; color: var(--sub); cursor: pointer; white-space: nowrap; }
+  .views button.on { background: #fff; color: var(--accent); box-shadow: 0 0 0 1px var(--line); }
+  .cal { max-width: 1280px; margin: 0 auto; padding: 12px 20px 30px; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+  .cal-box { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 14px; }
+  .cal-h { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .cal-h .ttl { font-size: 19px; font-weight: 800; min-width: 120px; text-align: center; }
+  .cal-h .nb { width: 32px; height: 32px; border: 1px solid var(--line); background: #fff; border-radius: 8px; cursor: pointer; font-size: 18px; }
+  .cal-h .hint { margin-left: auto; font-size: 12px; color: var(--sub); }
+  .grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+  .wd { text-align: center; font-size: 12px; font-weight: 700; color: var(--sub); padding: 6px 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: #fafbfc; }
+  .wd.w0, .day.w0 .dn { color: #c2410c; } .wd.w6, .day.w6 .dn { color: #1d4ed8; }
+  .day { appearance: none; border: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: #fff; min-height: 86px; padding: 5px; text-align: left; cursor: pointer;
+    display: flex; flex-direction: column; gap: 3px; font: inherit; min-width: 0; }
+  .day.past .slots3 { opacity: .3; }
+  .day.out { background: #fafbfc; } .day.out .dn { opacity: .4; }
+  .day.sel { box-shadow: inset 0 0 0 2px var(--accent); }
+  .day.today .dn { background: var(--accent); color: #fff !important; border-radius: 50%; }
+  .dn { font-size: 13px; font-weight: 700; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; }
+  .slots3 { display: flex; gap: 3px; margin-top: auto; }
+  .slots3 span { flex: 1; height: 7px; border-radius: 4px; background: #d8f0e2; }
+  .slots3 span.b { background: #f5c46b; }
+  .slots3 span.ad { background: #e8836b; }
+  .adl { font-size: 11px; font-weight: 800; color: #fff; background: #d9534f; border-radius: 5px; padding: 1px 5px; align-self: flex-start; white-space: nowrap; }
+  .adn { background: #fdecea; color: #a12d2a; border: 1px solid #f5c2bd; border-radius: 10px; padding: 9px 11px; font-size: 13px; line-height: 1.6; margin-bottom: 8px; }
+  .pl { font-size: 11px; padding: 1px 5px; border-radius: 5px; background: #f1f5f9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .legend3 { display: flex; gap: 12px; font-size: 12px; color: var(--sub); margin-top: 10px; align-items: center; flex-wrap: wrap; }
+  .legend3 i { display: inline-block; width: 18px; height: 7px; border-radius: 4px; background: #d8f0e2; margin-right: 5px; vertical-align: middle; }
+  .legend3 i.b { background: #f5c46b; } .legend3 i.ad { background: #e8836b; }
+  .side { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 16px; position: sticky; top: 76px; }
+  .side h3 { margin: 0 0 10px; font-size: 18px; }
+  .sum3 { display: grid; gap: 6px; }
+  .s3 { display: flex; justify-content: space-between; align-items: center; border-radius: 10px; padding: 9px 11px; background: var(--ok-l); border: 1px solid #cfebdb; }
+  .s3 b { color: var(--ok); } .s3 span { font-size: 12.5px; color: var(--sub); }
+  .s3.busy { background: var(--warn-l); border-color: #f3ddb2; } .s3.busy b { color: var(--warn); }
+  .busy-list { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .bl { display: flex; gap: 8px; align-items: center; font-size: 13px; border: 1px solid var(--line); border-radius: 10px; padding: 7px 10px; }
+  .bl i { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .bl em { font-style: normal; color: var(--sub); margin-left: auto; font-size: 12px; }
+  .conflict { font-size: 12.5px; margin-top: 6px; padding: 7px 10px; border-radius: 8px; }
+  .conflict.ng { background: var(--warn-l); color: var(--warn); }
+  .conflict.ok { background: var(--ok-l); color: var(--ok); }
+  /* リスト */
+  .lbar { display: flex; gap: 8px; padding: 14px 20px 6px; align-items: center; flex-wrap: wrap; max-width: 1280px; margin: 0 auto; }
+  .lbar select.in { max-width: 320px; }
+  .lsum { font-size: 12.5px; color: var(--sub); }
+  .lsum b { color: var(--ink); }
+  .vb { font-size: 11px; font-weight: 700; border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
+  .vb.ok { background: var(--ok-l); color: var(--ok); } .vb.hold { background: var(--warn-l); color: var(--warn); }
+  .vb.ng { background: #f3f4f6; color: #6b7280; } .vb.un { background: #f8fafc; color: #94a3b8; border: 1px dashed #cbd5e1; }
+  .rk { font-size: 11px; font-weight: 800; border-radius: 6px; padding: 2px 7px; background: var(--accent-l); color: var(--accent); }
+  .rk.A { background: var(--accent); color: #fff; }
+  .item.ng .co { color: #9ca3af; text-decoration: line-through; }
+  /* リストの状況（Excelの塗り分けと同じ） */
+  .item.lrow { border-left: 4px solid #e2e8f0; }
+  .item.lrow.s-calling { border-left-color: #94a3b8; } .item.lrow.s-follow { border-left-color: #2563eb; } .item.lrow.s-appo { border-left-color: #e0a800; background: #fffdf2; }
+  .item.lrow.s-hold { border-left-color: #16a34a; } .item.lrow.s-ng { border-left-color: #dc2626; background: #fffafa; }
+  .item.lrow .co { white-space: normal; overflow-wrap: anywhere; }
+  .item.lrow.is-done .co { color: #475467; }
+  .sps { display: inline-flex; gap: 4px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+  .sp { font-size: 11px; font-weight: 700; border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+  .sp-new { background: #f1f4f8; color: #64748b; } .sp-calling { background: #eef1f6; color: #475569; } .sp-follow { background: #e6effe; color: #1d4ed8; }
+  .sp-appo { background: #fff3c4; color: #8a5a00; } .sp-hold { background: #e3f6e8; color: #15803d; } .sp-ng { background: #fde8e8; color: #b91c1c; } .sp-done { background: #eef0f3; color: #475467; }
+  .item .r3.memo { color: var(--ink); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; line-height: 1.55; }
+  .item .r3.why { color: var(--sub); }
+  .tab.t-follow.on { background: #2563eb; border-color: #2563eb; } .tab.t-appo.on { background: #b88600; border-color: #b88600; }
+  .tab.t-hold.on { background: #16a34a; border-color: #16a34a; } .tab.t-ng.on { background: #dc2626; border-color: #dc2626; }
+  .dseg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin-left: auto; }
+  .dseg button { appearance: none; border: 0; background: #fff; font: inherit; font-size: 12px; padding: 5px 11px; cursor: pointer; color: var(--sub); }
+  .dseg button + button { border-left: 1px solid var(--line); }
+  .dseg button.on { background: #334155; color: #fff; }
+  .pstate { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+  .pdone { appearance: none; font: inherit; font-size: 12.5px; font-weight: 700; border: 1px solid var(--line); background: #fff; color: var(--sub); border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+  .pdone.on { background: #475467; border-color: #475467; color: #fff; }
+  #lSum .s-appo b { color: #8a5a00; } #lSum .s-follow b { color: #1d4ed8; } #lSum .s-ng b { color: #b91c1c; }
+  .reason { background: #f8fafc; border-left: 3px solid #cbd5e1; padding: 8px 10px; border-radius: 0 8px 8px 0; margin-top: 10px; font-size: 13px; line-height: 1.6; }
+  .reason.ok { border-left-color: var(--ok); } .reason.ng { border-left-color: var(--red); background: #fef2f2; } .reason.hold { border-left-color: var(--warn); }
+  .phint { background: var(--accent-l); border-radius: 10px; padding: 10px 12px; margin-top: 10px; font-size: 13px; line-height: 1.6; }
+  .phint b { display: block; font-size: 11.5px; color: var(--accent); }
+  .drop { display: flex; flex-direction: column; align-items: center; gap: 4px; border: 2px dashed #c7d2fe; border-radius: 14px; padding: 22px; cursor: pointer; background: #fafbff; margin-top: 10px; }
+  .drop input { display: none; } .drop b { color: var(--accent); }
+  /* 先方からの依頼 */
+  .item.vq { border-color: #f2c76e; background: #fffbf2; }
+  .rq { font-size: 11px; font-weight: 700; border-radius: 6px; padding: 2px 8px; background: var(--accent-l); color: var(--accent); white-space: nowrap; }
+  .rq.todo { background: var(--warn-l); color: var(--warn); }
+  .tag-req { font-size: 11px; font-weight: 700; border-radius: 6px; padding: 2px 8px; background: #f1f5f9; color: #334155; white-space: nowrap; }
+  .item .r4 { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .vqs { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .vqs-h { display: flex; align-items: center; gap: 8px; }
+  .vqs-h .sec-t { margin: 0; flex: 1; }
+  .vqc { border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; background: #fff; min-width: 0; }
+  .vqc.is-new { border-color: #f2c76e; box-shadow: 0 0 0 3px #fff3da; }
+  .vqc.todo { border-left: 4px solid var(--warn); }
+  .vqc-h { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .vqc-t { font-weight: 800; flex: 1; min-width: 0; }
+  .vqc-i { font-size: 12.5px; color: var(--sub); margin-top: 6px; line-height: 1.6; overflow-wrap: anywhere; }
+  .vqc-i b { color: var(--ink); }
+  .ev { border-radius: 10px; padding: 7px 10px; background: #eef2ff; margin-top: 6px; }
+  .ev.mine { background: var(--pink-l); }
+  .ev.is-new { box-shadow: inset 3px 0 0 #f59e0b; }
+  .ev-h { font-size: 11.5px; color: var(--sub); display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .ev-h b { color: var(--accent); } .ev.mine .ev-h b { color: var(--pink); }
+  .ev-t { font-weight: 600; margin-top: 2px; }
+  .ev-b { white-space: pre-wrap; line-height: 1.6; color: #374151; margin-top: 2px; overflow-wrap: anywhere; }
+  .vqc .btns { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .docs-box { border: 1px dashed #cbd5e1; border-radius: 10px; padding: 4px 10px 10px; margin-top: 8px; background: #fff; }
+  .docs-box .t { font-size: 12px; font-weight: 700; color: var(--warn); margin-top: 6px; }
+  @media (max-width: 860px) { .cal { grid-template-columns: 1fr; padding: 10px 12px 30px; } .side { position: static; } .day { min-height: 58px; } .pl { display: none; }
+    .views button { padding: 6px 10px; } .cal-h .hint { display: none; } }
+  @media (max-width: 860px) {
+    .main { grid-template-columns: minmax(0, 1fr); padding: 8px 12px 30px; }
+    .lbar select.in { max-width: 100%; }
+    .bar { padding: 12px 12px 4px; }
+    .top { padding: 10px 12px; }
+    .panel { position: static; max-height: none; }
+    body.detail .list-wrap { display: none; }
+    body:not(.detail) .panel-wrap { display: none; }
+    .back { display: inline-block; margin-bottom: 10px; }
+    .row2 { grid-template-columns: 1fr; }
+    .top .lg { display: none; }
+    .top { flex-wrap: wrap; row-gap: 8px; }
+    .views { order: 5; width: 100%; }
+    .views button { flex: 1; }
+    .top .t1 { font-size: 13.5px; }
+    .top .logo { display: none; }
+    #logoutBtn { white-space: nowrap; padding: 4px; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+  <div id="loginView" class="login" style="display:none">
+    <div class="login-box">
+      <h1>テレアポ報告</h1>
+      <p>お知らせしたパスワードを入れてください。<br>このページのURLとパスワードは社外に共有しないでください。</p>
+      <form id="loginForm">
+        <label class="f">パスワード</label>
+        <input class="in" type="password" id="pw" autocomplete="current-password" required>
+        <div style="margin-top:14px"><button class="btn primary" style="width:100%" id="loginBtn">ログイン</button></div>
+        <div class="err" id="loginErr"></div>
+      </form>
+    </div>
+  </div>
+
+  <div id="appView" style="display:none">
+    <header class="top">
+      <div class="logo"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/></svg></div>
+      <div><div class="t1" id="tTitle">テレアポ報告</div><div class="t2" id="tSub"></div></div>
+      <div class="sp"></div>
+      <div class="views" role="tablist"><button class="on" data-v="list">記録</button><button data-v="lists">リスト</button><button data-v="cal">予定・空き</button></div>
+      <button class="btn primary" id="newBtn">＋ <span class="lg">新しいテレアポを</span>記録</button>
+      <button class="btn link" id="logoutBtn">ログアウト</button>
+    </header>
+    <div id="listView">
+    <div class="bar">
+      <input class="in" type="search" id="q" placeholder="会社名・相手の名前で検索">
+      <div class="tabs" id="tabs"></div>
+    </div>
+    <div class="main">
+      <div class="list-wrap"><div class="list" id="list"></div></div>
+      <div class="panel-wrap"><div class="panel" id="panel"><div class="empty">左の一覧から会社を選ぶと、商談の進み具合とやりとりが見られます。</div></div></div>
+    </div>
+    </div>
+    <div id="listsView" style="display:none">
+      <div class="lbar">
+        <select class="in" id="lSel"></select>
+        <button class="btn" id="lUpBtn">＋ リストをアップロード</button>
+        <span class="lsum" id="lSum"></span>
+      </div>
+      <div class="bar" style="padding-top:4px">
+        <input class="in" type="search" id="lq" placeholder="会社名・業種・住所で検索">
+        <div class="tabs" id="lTabs"></div>
+      </div>
+      <div class="main">
+        <div class="list-wrap"><div class="list" id="lList"></div></div>
+        <div class="panel-wrap"><div class="panel" id="lPanel"><div class="empty">左の一覧から会社を選ぶと、こちらの判定と電話の記録が見られます。<br>○ の会社からかけてください。× の会社にはかけないでください。</div></div></div>
+      </div>
+    </div>
+    <div id="calView" style="display:none"><div class="cal">
+      <div class="cal-box"><div class="cal-h"><button class="nb" id="cPrev">‹</button><div class="ttl" id="cTitle"></div><button class="nb" id="cNext">›</button>
+        <span class="hint">色のついた時間帯は予定あり。空いている時間帯にアポを入れてください</span></div>
+        <div class="grid" id="cGrid"></div>
+        <div class="legend3"><span><i></i>空き</span><span><i class="b"></i>予定あり</span><span><i class="ad"></i>終日予定あり</span><span>左から 午前・午後前半・午後後半</span></div></div>
+      <div class="side" id="cSide"></div>
+    </div></div>
+  </div>
+
+  <div class="modal" id="newModal">
+    <div class="modal-box">
+      <h3>新しいテレアポを記録</h3>
+      <div class="note">記録すると、すぐに先方の営業画面に届きます。</div>
+      <form id="newForm">
+        <label class="f">会社名 <b>*</b></label><input class="in" id="nCompany" maxlength="120" required>
+        <div class="row2">
+          <div><label class="f">相手の名前</label><input class="in" id="nContact" maxlength="60"></div>
+          <div><label class="f">部署・役職</label><input class="in" id="nDept" maxlength="80"></div>
+        </div>
+        <div class="row2">
+          <div><label class="f">電話</label><input class="in" id="nPhone" maxlength="40" inputmode="tel"></div>
+          <div><label class="f">メール</label><input class="in" id="nEmail" maxlength="200" type="email"></div>
+        </div>
+        <div class="row2">
+          <div><label class="f">架電日時</label><input class="in" type="datetime-local" id="nTel"></div>
+          <div><label class="f">結果</label><select class="in" id="nResult"></select></div>
+        </div>
+        <div class="row2">
+          <div class="appo-row"><label class="f">アポ日時</label><input class="in" type="datetime-local" id="nAppo"><div id="nAppoHint"></div></div>
+          <div class="recall-row"><label class="f">次にかける日</label><input class="in" type="date" id="nNext"></div>
+        </div>
+        <div id="nDocsWrap"></div>
+        <label class="f">電話のメモ</label>
+        <textarea class="in" id="nMemo" maxlength="5000" placeholder="例: 板金の外注先を探している。月20台くらい。来週の火曜なら製造部長が会える。"></textarea>
+        <div class="actions"><button type="button" class="btn" id="newCancel">やめる</button><button class="btn primary" id="newSave">記録する</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal" id="upModal">
+    <div class="modal-box">
+      <h3>リストをアップロード</h3>
+      <div class="note">Excel（.xlsx）か CSV をそのままアップロードできます。見出しがなくても会社名・電話・住所などを読み取ります。アップロードするとすぐに先方と共有され、先方で「かける／かけない」の判定をします。</div>
+      <label class="drop" id="upDrop"><input type="file" id="upFile" accept=".xlsx,.xlsm,.csv,.tsv,.txt"><b>ファイルを選ぶ</b><span class="note" id="upName">ここにドラッグしてもかまいません</span></label>
+      <label class="f">リストの名前</label><input class="in" id="upListName" maxlength="80" placeholder="例: 第6弾">
+      <div class="actions"><button type="button" class="btn" id="upCancel">やめる</button><button class="btn primary" id="upGo">アップロード</button></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+const PICO = {
+  phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/>',
+  doc: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>',
+  meet: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/><path d="m9 15.5 2 2 4-4"/>',
+  ban: '<circle cx="12" cy="12" r="9"/><path d="m5.7 5.7 12.6 12.6"/>',
+};
+function ico(n, z = 14) { return `<svg class="ic" width="${z}" height="${z}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;flex:none">${PICO[n] || ''}</svg>`; }
+</script>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => s == null ? '' : String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+const pad = n => String(n).padStart(2, '0');
+const nowLocal = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const fmt = s => { if (!s) return ''; const d = s.slice(0, 10).split('-'); return `${Number(d[1])}/${Number(d[2])}` + (s.length >= 16 ? ' ' + s.slice(11, 16) : ''); };
+const KIND = { call: '電話', meeting: '打合せ・訪問', email: 'メール', memo: 'メモ', stage: '進み具合' };
+const P = { me: null, deals: [], sel: null, detail: null, tab: 'all', q: '' };
+const KEY = new URLSearchParams(location.search).get('k') || '';
+
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(toast._t); toast._t = setTimeout(() => t.style.display = 'none', 2600); }
+
+async function api(path, opt = {}) {
+  const r = await fetch(path, { credentials: 'include', headers: { 'Content-Type': 'application/json' }, ...opt });
+  if (r.status === 401 && !path.endsWith('/login')) { showLogin(); throw new Error('ログインしてください'); }
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(typeof body.detail === 'string' ? body.detail : '入力を確かめてください');
+  return body;
+}
+
+function showLogin() {
+  $('appView').style.display = 'none';
+  $('loginView').style.display = 'flex';
+  if (!KEY) { $('loginErr').textContent = 'URLが正しくありません。お知らせしたURLから開いてください'; $('loginBtn').disabled = true; }
+  setTimeout(() => $('pw').focus(), 50);
+}
+
+$('loginForm').onsubmit = async e => {
+  e.preventDefault();
+  $('loginErr').textContent = '';
+  $('loginBtn').disabled = true;
+  try {
+    await api('/api/partner/login', { method: 'POST', body: JSON.stringify({ k: KEY, password: $('pw').value }) });
+    $('pw').value = '';
+    await start();
+  } catch (err) { $('loginErr').textContent = err.message; }
+  finally { $('loginBtn').disabled = !KEY; }
+};
+
+$('logoutBtn').onclick = async () => { try { await api('/api/partner/logout', { method: 'POST' }); } catch {} showLogin(); };
+
+async function start() {
+  P.me = await api('/api/partner/me');
+  P.rm = await api('/api/partner/request-meta').catch(() => ({ recall_results: [], arrival_results: [], methods: ['メール', '郵送', 'FAX', 'どれでも'] }));
+  $('tTitle').textContent = `${P.me.client} 向け テレアポ報告`;
+  $('tSub').textContent = P.me.vendor;
+  document.title = `テレアポ報告｜${P.me.vendor}`;
+  $('nResult').innerHTML = '<option value="">— 選ぶ —</option>' + P.me.results.map(r => `<option>${esc(r)}</option>`).join('');
+  $('loginView').style.display = 'none';
+  $('appView').style.display = '';
+  await loadList();
+}
+
+async function loadList() {
+  P.deals = (await api('/api/partner/deals')).deals;
+  renderTabs(); renderList();
+}
+
+const TABS = [
+  ['all', 'すべて', () => true],
+  ['req', '依頼（電話する）', d => (d.req_todo || []).length > 0],
+  ['updated', '新着・更新あり', d => d.updated || d.req_new],
+  ['telapo', 'テレアポ中', d => d.owned && d.stage === 'テレアポ'],
+  ['appo', 'アポ以降', d => d.owned && !d.closed && d.stage !== 'テレアポ'],
+  ['closed', '終了', d => d.owned && d.closed],
+];
+function renderTabs() {
+  $('tabs').innerHTML = TABS.map(([k, l, f]) => `<button class="tab ${P.tab === k ? 'on' : ''}" data-tab="${k}">${l}<span class="n">${P.deals.filter(f).length}</span></button>`).join('');
+  $('tabs').querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { P.tab = b.dataset.tab; renderTabs(); renderList(); });
+}
+function renderList() {
+  const f = TABS.find(t => t[0] === P.tab)[2];
+  const q = P.q.toLowerCase();
+  const list = P.deals.filter(f).filter(d => !q || [d.company, d.contact, d.title].some(v => (v || '').toLowerCase().includes(q)))
+    .sort((a, b) => (!!b.req_new - !!a.req_new) || (b.updated - a.updated) || (((b.req_todo || []).length > 0) - ((a.req_todo || []).length > 0))
+      || (b.last_update || b.created_at || '').localeCompare(a.last_update || a.created_at || ''));
+  $('list').innerHTML = list.map(d => `
+    <div class="item ${P.sel === d.id ? 'on' : ''} ${d.req_new ? 'vq' : ''}" data-id="${d.id}">
+      <div class="r1"><span class="co">${esc(d.company)}</span>${d.req_new ? '<span class="new">新着</span>' : d.updated ? '<span class="new">更新あり</span>' : ''}${d.owned ? `<span class="stage s-${esc(d.stage)}">${esc(d.stage)}</span>` : '<span class="tag-req">依頼</span>'}</div>
+      <div class="r2">${d.contact ? `<span>${esc(d.contact)}</span>` : ''}${!d.owned && d.phone ? `<span>${ico('phone', 12)} ${esc(d.phone)}</span>` : ''}${d.telapo_at ? `<span>架電 ${esc(fmt(d.telapo_at))}</span>` : ''}${d.appo_at ? `<span>${ico('meet', 12)} アポ ${esc(fmt(d.appo_at))}</span>` : ''}</div>
+      ${(d.req_todo || []).length ? `<div class="r4">${d.req_todo.map(t => `<span class="rq todo">${t.todo === '電話する' ? `${ico('phone', 12)} 電話する` : `${ico('doc', 12)} 到着確認の電話`}${t.todo === '電話する' ? `（${esc(t.purpose)}）` : ''}${t.due_on ? `・${esc(fmt(t.due_on))}${t.todo === '電話する' ? 'まで' : 'ごろ'}` : ''}</span>`).join('')}</div>`
+        : (d.req_labels || []).length && !d.owned ? `<div class="r4">${d.req_labels.map(l => `<span class="rq">${esc(l)}</span>`).join('')}</div>` : ''}
+      ${d.latest ? `<div class="r3">${esc(d.latest.title || '')}</div>` : ''}
+    </div>`).join('') || `<div class="empty">${P.deals.length ? '該当する記録はありません' : 'まだ記録がありません。右上の「＋ 新しいテレアポを記録」から始めてください。'}</div>`;
+  $('list').querySelectorAll('.item').forEach(el => el.onclick = () => openDeal(Number(el.dataset.id)));
+}
+$('q').oninput = e => { P.q = e.target.value; renderList(); };
+
+async function openDeal(id) {
+  P.sel = id;
+  renderList();
+  try {
+    P.detail = await api(`/api/partner/deals/${id}`);
+    const d = P.deals.find(x => x.id === id); if (d) d.updated = false;
+    renderTabs(); renderList(); renderDetail();
+    document.body.classList.add('detail');
+    if (window.innerWidth <= 860) window.scrollTo(0, 0);
+  } catch (e) { toast(e.message); }
+}
+
+// ── 先方からの依頼（再テレアポ・資料送付） ──
+const RQ_OURS = { create: '依頼', sent: '資料を送付しました', comment: 'コメント', cancel: '取り消し', reopen: 'もう一度依頼' };
+const RQ_MINE = { create: '資料送付を頼まれた（御社の記録）', report: '電話しました', arrival: '到着確認の電話', comment: 'コメント' };
+const RQ_OPEN = {};   // 開いているフォーム { reqId: 'report' | 'arrival' | 'comment' }
+function docsFields(p, show) {
+  return `<div class="docs-box" id="${p}Docs" style="${show ? '' : 'display:none'}"><div class="t">${ico('doc')} 資料の送り先（先方が送ります）</div>
+    <div class="row2"><div><label class="f">宛先（部署・お名前）</label><input class="in" id="${p}DTo" maxlength="80" placeholder="例: 購買部 佐藤様"></div>
+      <div><label class="f">送り方</label><select class="in" id="${p}DMethod">${(P.rm.methods || []).map(m => `<option>${esc(m)}</option>`).join('')}</select></div></div>
+    <label class="f">送り先（メールアドレスか住所）</label><input class="in" id="${p}DAddr" maxlength="200" placeholder="例: sato@example.co.jp ／ 大阪府◯◯市…">
+    <label class="f">ほしい資料・内容</label><input class="in" id="${p}DWhat" maxlength="500" placeholder="例: 会社案内と設備一覧"></div>`;
+}
+const docsVal = p => $(p + 'Docs') && $(p + 'Docs').style.display !== 'none'
+  ? { to: $(p + 'DTo').value, method: $(p + 'DMethod').value, address: $(p + 'DAddr').value, what: $(p + 'DWhat').value } : null;
+
+function reqHtml(r) {
+  const s = r.share || {}, dc = r.docs || {};
+  const ttl = r.kind === 'recall' ? `${ico('phone')} 再テレアポのお願い：${esc(r.purpose || '')}` : `${ico('doc')} 資料送付`;
+  const info = [
+    r.kind === 'recall' ? `<b>${esc(s.company || '')}</b>　${esc([s.department, s.contact].filter(Boolean).join(' '))}　${s.phone ? `<a href="tel:${esc(s.phone.replace(/[^\d+]/g, ''))}">${esc(s.phone)}</a>` : ''}` : '',
+    r.kind === 'recall' && r.due_on ? `いつまでに: <b>${esc(fmt(r.due_on))}</b>` : '',
+    r.kind === 'docs' ? [dc.what ? `資料: ${esc(dc.what)}` : '', dc.to ? `宛先: ${esc(dc.to)}` : '', dc.method ? `送り方: ${esc(dc.method)}` : '', dc.address ? `送り先: ${esc(dc.address)}` : ''].filter(Boolean).join('　') : '',
+    r.kind === 'docs' && r.status === 'sent' && r.follow_on ? `<b>${esc(fmt(r.follow_on))}ごろ</b>に「届きましたか？」のお電話をお願いします` : '',
+    r.kind === 'docs' && r.status === 'requested' ? `${esc(P.me.client)}が資料を送る準備をしています。送ったらお知らせが届きます` : '',
+  ].filter(Boolean).map(x => `<div class="vqc-i">${x}</div>`).join('');
+  const evs = r.events.map(e => { const mine = e.actor === 'vendor';
+    return `<div class="ev ${mine ? 'mine' : ''} ${e.new ? 'is-new' : ''}"><div class="ev-h"><b>${mine ? '御社' : esc(P.me.client)}</b><span>${esc(fmt(e.at || e.created_at))}</span>${e.new ? '<span class="new">新着</span>' : ''}</div>
+      <div class="ev-t">${esc((mine ? RQ_MINE : RQ_OURS)[e.action] || e.action)}${e.result ? (e.action === 'sent' ? `（${esc(e.result)}）` : `：${esc(e.result)}`) : ''}</div>${e.body ? `<div class="ev-b">${esc(e.body)}</div>` : ''}</div>`; }).join('');
+  const f = RQ_OPEN[r.id];
+  let form = '';
+  if (f === 'report' || f === 'arrival') {
+    const results = f === 'report' ? P.rm.recall_results : P.rm.arrival_results;
+    form = `<div class="form" style="margin-top:10px"><div class="row2">
+        <div><label class="f">電話した日時</label><input class="in" type="datetime-local" id="q${r.id}At" value="${nowLocal()}"></div>
+        <div><label class="f">結果 <b>*</b></label><select class="in" id="q${r.id}Res"><option value="">— 選ぶ —</option>${results.map(x => `<option>${esc(x)}</option>`).join('')}</select></div></div>
+      <div class="row2"><div class="q-appo" style="display:none"><label class="f">アポ日時</label><input class="in" type="datetime-local" id="q${r.id}Appo"><div id="q${r.id}AppoHint"></div></div>
+        <div class="q-next" style="display:none"><label class="f">次にかける日</label><input class="in" type="date" id="q${r.id}Next"></div></div>
+      ${f === 'report' ? docsFields(`q${r.id}`, false) : ''}
+      <label class="f">コメント（先方に届きます）</label><textarea class="in" id="q${r.id}Body" maxlength="5000" placeholder="例: 佐藤様と話せました。来月なら訪問OK。図面はまだ"></textarea>
+      <div class="actions"><button class="btn" data-q-x="${r.id}">やめる</button><button class="btn primary" data-q-go="${r.id}" data-q-mode="${f}">記録する</button></div></div>`;
+  } else if (f === 'comment') {
+    form = `<div class="form" style="margin-top:10px"><textarea class="in" id="q${r.id}Body" maxlength="5000" placeholder="先方へのコメント"></textarea>
+      <div class="actions"><button class="btn" data-q-x="${r.id}">やめる</button><button class="btn primary" data-q-go="${r.id}" data-q-mode="comment">送る</button></div></div>`;
+  }
+  const btns = [];
+  if (!f) {
+    if (r.todo === '電話する') btns.push(`<button class="btn primary" data-q-open="${r.id}" data-m="report">${ico('phone')} 電話の結果を記録</button>`);
+    if (r.todo === '到着確認の電話') btns.push(`<button class="btn primary" data-q-open="${r.id}" data-m="arrival">${ico('phone')} 到着確認の結果を記録</button>`);
+    btns.push(`<button class="btn" data-q-open="${r.id}" data-m="comment">コメント</button>`);
+  }
+  return `<div class="vqc ${r.new ? 'is-new' : ''} ${r.todo ? 'todo' : ''}"><div class="vqc-h"><span class="vqc-t">${ttl}</span><span class="rq ${r.todo ? 'todo' : ''}">${esc(r.todo ? r.todo : r.status_label)}</span></div>
+    ${info}${evs}${form}${btns.length ? `<div class="btns">${btns.join('')}</div>` : ''}</div>`;
+}
+
+function bindReqs(d) {
+  const box = $('panel');
+  box.querySelectorAll('[data-q-open]').forEach(b => b.onclick = () => { for (const k in RQ_OPEN) delete RQ_OPEN[k]; RQ_OPEN[b.dataset.qOpen] = b.dataset.m; renderDetail();
+    const el = $(`q${b.dataset.qOpen}Res`) || $(`q${b.dataset.qOpen}Body`); if (el) el.focus(); });
+  box.querySelectorAll('[data-q-x]').forEach(b => b.onclick = () => { delete RQ_OPEN[b.dataset.qX]; renderDetail(); });
+  box.querySelectorAll('select[id$="Res"]').forEach(sel => {
+    const id = sel.id.slice(1, -3);
+    const tg = () => { const v = sel.value; const f = sel.closest('.form');
+      f.querySelector('.q-appo').style.display = v === 'アポ獲得' ? '' : 'none';
+      f.querySelector('.q-next').style.display = (v === '再コール' || v === '担当者不在') ? '' : 'none';
+      if ($(`q${id}Docs`)) $(`q${id}Docs`).style.display = v === '資料送付' ? '' : 'none'; };
+    sel.onchange = tg; tg();
+    const ap = $(`q${id}Appo`); if (ap) ap.addEventListener('change', () => appoHint(`q${id}Appo`, `q${id}AppoHint`));
+  });
+  box.querySelectorAll('[data-q-go]').forEach(b => b.onclick = async () => {
+    const id = b.dataset.qGo, mode = b.dataset.qMode;
+    const body = { action: mode, body: $(`q${id}Body`).value };
+    if (mode === 'comment' && !body.body.trim()) { toast('コメントを入れてください'); return; }
+    if (mode !== 'comment') {
+      body.result = $(`q${id}Res`).value; body.at = $(`q${id}At`).value || null;
+      if (!body.result) { toast('結果を選んでください'); return; }
+      body.appo_at = body.result === 'アポ獲得' ? ($(`q${id}Appo`).value || null) : null;
+      body.next_call_on = $(`q${id}Next`).value || null;
+      if (body.result === '資料送付') body.docs = docsVal(`q${id}`);
+    }
+    b.disabled = true;
+    try {
+      await api(`/api/partner/requests/${id}/events`, { method: 'POST', body: JSON.stringify(body) });
+      delete RQ_OPEN[id]; toast(mode === 'comment' ? 'コメントを送りました' : '記録しました。先方に届きます'); C.cache = {};
+      await loadList(); await openDeal(d.id);
+    } catch (e) { toast(e.message); b.disabled = false; }
+  });
+  const seen = $('rqSeen');
+  if (seen) seen.onclick = async () => {
+    try { await api(`/api/partner/deals/${d.id}/requests/seen`, { method: 'POST' }); toast('確認しました'); await loadList(); await openDeal(d.id); }
+    catch (e) { toast(e.message); }
+  };
+}
+
+function renderDetail() {
+  const d = P.detail;
+  const acts = d.activities.map(a => {
+    const cls = a.mine ? 'mine' : a.kind === 'stage' ? '' : 'ours';
+    const who = a.mine ? '御社' : a.kind === 'stage' ? '' : P.me.client;
+    return `<div class="tl-i ${cls}"><div class="tl-h">${who ? `<span class="who ${cls}">${esc(who)}</span>` : ''}<span>${esc(KIND[a.kind] || a.kind)}</span><span>${esc(fmt(a.occurred_at))}</span></div>
+      <div class="tl-t">${esc(a.title || '')}</div>${a.body ? `<div class="tl-b">${esc(a.body)}</div>` : ''}</div>`;
+  }).join('') || '<div class="note">まだやりとりはありません</div>';
+  const reqs = (d.requests || []).slice().reverse();
+  const reqNew = reqs.some(r => r.new);
+  const reqBlock = reqs.length ? `<div class="vqs"><div class="vqs-h"><div class="sec-t">${esc(P.me.client)}からの依頼${reqNew ? ' <span class="new">新着</span>' : ''}</div>
+      ${reqNew ? '<button class="btn primary" id="rqSeen">確認しました</button>' : ''}</div>${reqs.map(reqHtml).join('')}</div>` : '';
+  if (!d.owned) {
+    $('panel').innerHTML = `
+    <button class="btn link back" id="backBtn">← 一覧に戻る</button>
+    <div style="display:flex;gap:10px;align-items:center"><h2 style="flex:1">${esc(d.company)}</h2><span class="tag-req">依頼</span></div>
+    <div class="kv">
+      <div class="k">相手</div><div>${esc([d.department, d.contact].filter(Boolean).join(' ')) || '—'}</div>
+      <div class="k">電話</div><div>${d.phone ? `<a href="tel:${esc(d.phone.replace(/[^\d+]/g, ''))}">${esc(d.phone)}</a>` : '—'}</div>
+    </div>
+    ${reqBlock}
+    ${acts.length && d.activities.length ? `<div class="sec"><div class="sec-t">御社の電話の記録（新しい順）</div><div class="tl">${acts}</div></div>` : ''}`;
+    $('backBtn').onclick = () => { document.body.classList.remove('detail'); P.sel = null; renderList(); };
+    bindReqs(d);
+    return;
+  }
+  $('panel').innerHTML = `
+    <button class="btn link back" id="backBtn">← 一覧に戻る</button>
+    <div style="display:flex;gap:10px;align-items:center"><h2 style="flex:1">${esc(d.company)}</h2><span class="stage s-${esc(d.stage)}">${esc(d.stage)}</span></div>
+    <div class="sub">${esc(d.title || '')}</div>
+    ${reqBlock}
+    <div class="kv">
+      <div class="k">相手</div><div>${esc([d.department, d.contact].filter(Boolean).join(' ')) || '—'}</div>
+      <div class="k">電話</div><div>${d.phone ? `<a href="tel:${esc(d.phone.replace(/[^\d+]/g, ''))}">${esc(d.phone)}</a>` : '—'}</div>
+      <div class="k">メール</div><div>${esc(d.email || '—')}</div>
+      <div class="k">架電日時</div><div>${esc(fmt(d.telapo_at)) || '—'}</div>
+      <div class="k">アポ日時</div><div>${esc(fmt(d.appo_at)) || '—'}</div>
+    </div>
+    <button class="btn link" id="editContact" style="padding-left:0">連絡先を直す</button>
+    <div id="contactForm"></div>
+    ${d.closed ? '<div class="note" style="margin-top:12px">この案件は終わっています。</div>' : `
+    <div class="sec"><div class="sec-t">電話の記録を追加</div>
+      <div class="form">
+        <div class="row2">
+          <div><label class="f">架電日時</label><input class="in" type="datetime-local" id="cTel" value="${nowLocal()}"></div>
+          <div><label class="f">結果</label><select class="in" id="cResult"><option value="">— 選ぶ —</option>${P.me.results.map(r => `<option>${esc(r)}</option>`).join('')}</select></div>
+        </div>
+        <div class="row2">
+          <div class="appo-row"><label class="f">アポ日時</label><input class="in" type="datetime-local" id="cAppo"><div id="cAppoHint"></div></div>
+          <div class="recall-row"><label class="f">次にかける日</label><input class="in" type="date" id="cNextDay"></div>
+        </div>
+        ${docsFields('c', false)}
+        <label class="f">電話のメモ</label><textarea class="in" id="cMemo" maxlength="5000"></textarea>
+        <div class="actions"><button class="btn primary" id="cSave">記録する</button></div>
+      </div></div>`}
+    <div class="sec"><div class="sec-t">やりとり（新しい順）</div><div class="tl">${acts}</div></div>`;
+  $('backBtn').onclick = () => { document.body.classList.remove('detail'); P.sel = null; renderList(); };
+  bindReqs(d);
+  $('editContact').onclick = () => {
+    $('contactForm').innerHTML = `<div class="form">
+      <label class="f">会社名</label><input class="in" id="eCompany" value="${esc(d.company)}" maxlength="120">
+      <div class="row2"><div><label class="f">相手の名前</label><input class="in" id="eContact" value="${esc(d.contact || '')}" maxlength="60"></div>
+        <div><label class="f">部署・役職</label><input class="in" id="eDept" value="${esc(d.department || '')}" maxlength="80"></div></div>
+      <div class="row2"><div><label class="f">電話</label><input class="in" id="ePhone" value="${esc(d.phone || '')}" maxlength="40"></div>
+        <div><label class="f">メール</label><input class="in" id="eEmail" value="${esc(d.email || '')}" maxlength="200"></div></div>
+      <div class="actions"><button class="btn" id="eCancel">やめる</button><button class="btn primary" id="eSave">保存</button></div></div>`;
+    $('eCancel').onclick = () => { $('contactForm').innerHTML = ''; };
+    $('eSave').onclick = async () => {
+      try {
+        await api(`/api/partner/deals/${d.id}/contact`, { method: 'PUT', body: JSON.stringify({ company: $('eCompany').value, contact: $('eContact').value,
+          department: $('eDept').value, phone: $('ePhone').value, email: $('eEmail').value }) });
+        toast('連絡先を直しました'); await loadList(); await openDeal(d.id);
+      } catch (e) { toast(e.message); }
+    };
+  };
+  if ($('cSave')) {
+    toggleRows('c');
+    $('cResult').onchange = () => toggleRows('c');
+    $('cSave').onclick = async () => {
+      const body = { telapo_at: $('cTel').value || null, result: $('cResult').value || null, appo_at: $('cAppo').value || null,
+        next_call_on: $('cNextDay').value || null, memo: $('cMemo').value, docs: docsVal('c') };
+      if (!body.result && !body.memo.trim() && !body.appo_at) { toast('結果かメモを入れてください'); return; }
+      $('cSave').disabled = true;
+      try { await api(`/api/partner/deals/${d.id}/calls`, { method: 'POST', body: JSON.stringify(body) }); toast(body.result === '資料送付' ? '記録しました。先方に資料の送付をお願いしました' : '記録しました'); C.cache = {}; await loadList(); await openDeal(d.id); }
+      catch (e) { toast(e.message); $('cSave').disabled = false; }
+    };
+  }
+}
+
+function toggleRows(p) {
+  const r = $(p + 'Result').value;
+  if ($(p + 'Docs')) $(p + 'Docs').style.display = r === '資料送付' ? '' : 'none';
+  const docs = r === '資料送付';   // 資料送付のときはアポ・次にかける日の欄ごと隠す（空白を残さない）
+  document.querySelectorAll(`#${p === 'n' ? 'newForm' : 'panel'} .appo-row`).forEach(el => { el.style.display = docs ? 'none' : ''; el.style.visibility = (r === 'アポ獲得' || !r) ? 'visible' : 'hidden'; });
+  document.querySelectorAll(`#${p === 'n' ? 'newForm' : 'panel'} .recall-row`).forEach(el => { el.style.display = docs ? 'none' : ''; el.style.visibility = (r === '再コール' || r === '担当者不在' || !r) ? 'visible' : 'hidden'; });
+}
+
+$('newBtn').onclick = () => {
+  $('newForm').reset(); $('nTel').value = nowLocal(); $('nDocsWrap').innerHTML = docsFields('n', false); toggleRows('n');
+  $('newModal').classList.add('open'); setTimeout(() => $('nCompany').focus(), 50);
+};
+$('nResult').onchange = () => toggleRows('n');
+$('newCancel').onclick = () => $('newModal').classList.remove('open');
+$('newModal').onclick = e => { if (e.target === $('newModal')) $('newModal').classList.remove('open'); };
+$('newForm').onsubmit = async e => {
+  e.preventDefault();
+  const body = { company: $('nCompany').value.trim(), contact: $('nContact').value, department: $('nDept').value, phone: $('nPhone').value,
+    email: $('nEmail').value, telapo_at: $('nTel').value || null, result: $('nResult').value || null, appo_at: $('nAppo').value || null,
+    next_call_on: $('nNext').value || null, memo: $('nMemo').value, docs: docsVal('n') };
+  if (!body.company) { toast('会社名を入れてください'); return; }
+  $('newSave').disabled = true;
+  try {
+    const r = await api('/api/partner/deals', { method: 'POST', body: JSON.stringify(body) });
+    $('newModal').classList.remove('open'); toast(body.result === '資料送付' ? '記録しました。先方に資料の送付をお願いしました' : '記録しました'); C.cache = {}; P.tab = 'all';
+    await loadList(); await openDeal(r.id);
+  } catch (err) { toast(err.message); }
+  finally { $('newSave').disabled = false; }
+};
+
+// ── リスト（先方と共有しているリスト） ──
+const L = { lists: [], cur: null, rows: [], sel: null, tab: 'all', done: 'all', q: '', detail: null };
+// 状況（Excelの塗り分けと同じ: 赤=かけない 黄=アポ 青=資料送付・再架電 緑=保留）。文字が赤い行＝完了
+const STL = { new: '未着手', calling: '架電中', follow: '資料送付・再架電', appo: 'アポ', hold: '保留', ng: 'かけない' };
+const stPill = r => `<span class="sp sp-${r.status}">${STL[r.status] || ''}</span>${r.done ? '<span class="sp sp-done">完了</span>' : ''}`;
+const VB = { ok: ['ok', '○ かける'], hold: ['hold', '△ 保留'], ng: ['ng', '× かけない'] };
+const vb = v => v ? `<span class="vb ${VB[v][0]}">${VB[v][1]}</span>` : '<span class="vb un">判定待ち</span>';
+async function loadLists(keep) {
+  L.lists = (await api('/api/partner/lists')).lists;
+  $('lSel').innerHTML = L.lists.map(l => `<option value="${l.id}">${esc(l.name)}（${l.total}社）</option>`).join('') || '<option value="">共有されているリストはありません</option>';
+  if (!keep || !L.lists.some(l => l.id === (L.cur && L.cur.id))) L.cur = L.lists[0] || null;
+  if (L.cur) $('lSel').value = L.cur.id;
+  await loadRows();
+}
+async function loadRows() {
+  if (!L.cur) { L.rows = []; renderLTabs(); renderLList(); $('lSum').textContent = ''; return; }
+  const d = await api(`/api/partner/lists/${L.cur.id}`);
+  L.rows = d.rows;
+  const c = k => L.rows.filter(r => r.verdict === k).length;
+  const sc = k => L.rows.filter(r => r.status === k).length;
+  $('lSum').innerHTML = `全 <b>${L.rows.length}</b>社　<span class="s-appo">アポ <b>${sc('appo')}</b></span>　<span class="s-follow">資料送付・再架電 <b>${sc('follow')}</b></span>　<span class="s-ng">かけない <b>${sc('ng')}</b></span>　完了 <b>${L.rows.filter(r => r.done).length}</b>`;
+  if (!L.tabSet) { L.tab = L.rows.some(r => r.verdict === 'ok' && !r.deal) ? 'ok' : 'all'; }
+  renderLTabs(); renderLList();
+}
+const LTABS = [
+  ['all', 'すべて', () => true],
+  ['ok', '○ かける', r => r.verdict === 'ok' && !r.deal],
+  ...Object.entries(STL).map(([k, l]) => [k, l, r => r.status === k]),
+];
+const LDONE = [['all', 'すべて'], ['open', '未完了'], ['done', '完了']];
+const doneOk = r => L.done === 'all' || (L.done === 'done') === !!r.done;
+function renderLTabs() {
+  $('lTabs').innerHTML = LTABS.filter(([k, , f]) => k !== 'ok' || L.rows.some(f)).map(([k, l, f]) => `<button class="tab t-${k} ${L.tab === k ? 'on' : ''}" data-lt="${k}">${l}<span class="n">${L.rows.filter(r => f(r) && doneOk(r)).length}</span></button>`).join('')
+    + `<span class="dseg">${LDONE.map(([k, l]) => `<button class="${L.done === k ? 'on' : ''}" data-ld="${k}">${l}</button>`).join('')}</span>`;
+  $('lTabs').querySelectorAll('[data-lt]').forEach(b => b.onclick = () => { L.tab = b.dataset.lt; L.tabSet = true; renderLTabs(); renderLList(); });
+  $('lTabs').querySelectorAll('[data-ld]').forEach(b => b.onclick = () => { L.done = b.dataset.ld; renderLTabs(); renderLList(); });
+}
+function renderLList() {
+  const f = LTABS.find(t => t[0] === L.tab)[2];
+  const q = L.q.toLowerCase();
+  const order = { ok: 0, hold: 1, undefined: 2, null: 2, ng: 3 };
+  const list = L.rows.filter(f).filter(doneOk).filter(r => !q || [r.company, r.industry, r.address, r.last_memo].some(v => (v || '').toLowerCase().includes(q)));
+  if (L.tab === 'ok') list.sort((a, b) => (order[a.verdict] - order[b.verdict]) || ((b.priority || 0) - (a.priority || 0)));
+  $('lList').innerHTML = list.map(r => `<div class="item lrow s-${r.status} ${r.done ? 'is-done' : ''} ${L.sel === r.id ? 'on' : ''}" data-id="${r.id}">
+      <div class="r1"><span class="co">${esc(r.company)}</span>${r.rank ? `<span class="rk ${esc(r.rank)}" title="先方のAI調査のマッチ度">${esc(r.rank)}</span>` : ''}<span class="sps">${stPill(r)}</span></div>
+      <div class="r2">${r.tel ? `<span>${ico('phone', 12)} ${esc(r.tel)}</span>` : ''}${r.industry ? `<span>${esc(r.industry)}</span>` : ''}${r.calls ? `<span>記録 ${r.calls}件</span>` : ''}${r.verdict ? vb(r.verdict) : ''}</div>
+      ${r.last_memo ? `<div class="r3 memo">${esc(r.last_memo)}</div>` : ''}
+      ${r.verdict_reason ? `<div class="r3 why">${esc(r.verdict_reason)}</div>` : ''}</div>`).join('')
+    || `<div class="empty">${L.cur ? '該当する会社はありません' : 'まだ共有されているリストがありません。「＋ リストをアップロード」から共有できます。'}</div>`;
+  $('lList').querySelectorAll('.item').forEach(el => el.onclick = () => openProspect(Number(el.dataset.id)));
+}
+$('lq').oninput = e => { L.q = e.target.value; renderLList(); };
+$('lSel').onchange = async () => { L.tabSet = false; L.cur = L.lists.find(l => l.id === Number($('lSel').value)) || null; L.sel = null; await loadRows(); $('lPanel').innerHTML = '<div class="empty">左の一覧から会社を選んでください。</div>'; };
+
+async function openProspect(id) {
+  L.sel = id; renderLList();
+  try { L.detail = await api(`/api/partner/prospects/${id}`); } catch (e) { toast(e.message); return; }
+  const p = L.detail;
+  const calls = p.calls.map(c => `<div class="tl-i ${c.mine ? 'mine' : 'ours'}"><div class="tl-h"><span class="who ${c.mine ? 'mine' : 'ours'}">${c.mine ? '御社' : esc(P.me.client)}</span><span>${esc(fmt(c.called_at))}</span>${c.source === 'import' ? '<span>リストの備考</span>' : ''}</div>
+      <div class="tl-t">${esc(c.result || '記録')}${c.contact || c.department ? `（${esc([c.department, c.contact].filter(Boolean).join(' '))}）` : ''}</div>${c.memo ? `<div class="tl-b">${esc(c.memo)}</div>` : ''}</div>`).join('') || '<div class="note">まだ記録はありません</div>';
+  const canCall = p.verdict !== 'ng' && (!p.deal || p.deal.closed);
+  $('lPanel').innerHTML = `
+    <button class="btn link back" id="lBack">← 一覧に戻る</button>
+    <div style="display:flex;gap:10px;align-items:center"><h2 style="flex:1">${esc(p.company)}</h2>${p.deal && !p.deal.closed ? `<span class="stage s-${esc(p.deal.stage)}">${esc(p.deal.stage)}</span>` : vb(p.verdict)}</div>
+    <div class="sub">${esc([p.industry, p.address].filter(Boolean).join('・'))}</div>
+    <div class="pstate">${(() => { const r = L.rows.find(x => x.id === p.id); return r ? `<span class="sp sp-${r.status}">${STL[r.status] || ''}</span>` : ''; })()}
+      <button class="pdone ${p.done ? 'on' : ''}" id="pDone">${p.done ? '完了（押すと戻す）' : '完了にする'}</button></div>
+    <div class="kv"><div class="k">電話</div><div>${p.tel ? `<a href="tel:${esc(p.tel.replace(/[^\d+]/g, ''))}">${esc(p.tel)}</a>` : '—'}</div>
+      <div class="k">公式サイト</div><div>${p.web ? `<a href="${esc(p.web)}" target="_blank" rel="noopener noreferrer">${esc(p.web)}</a>` : '—'}</div></div>
+    ${p.verdict_reason ? `<div class="reason ${esc(p.verdict || '')}"><b>${esc(P.me.client)}からのひとこと</b><br>${esc(p.verdict_reason)}</div>` : ''}
+    ${p.summary ? `<div class="phint"><b>どんな会社か</b>${esc(p.summary)}</div>` : ''}
+    ${p.talk_hint ? `<div class="phint"><b>電話で最初に確かめること</b>${esc(p.talk_hint)}</div>` : ''}
+    ${p.deal && !p.deal.closed ? `<div class="note" style="margin-top:14px">この会社は案件になっています（${esc(p.deal.stage)}）。${p.deal.id ? '<button class="btn link" id="lToDeal">記録タブで見る</button>' : ''}</div>` : ''}
+    ${p.verdict === 'ng' ? '<div class="note" style="margin-top:14px">この会社には電話しないでください。</div>' : ''}
+    ${canCall ? `<div class="sec"><div class="sec-t">電話の記録を追加</div><div class="form">
+        <div class="row2"><div><label class="f">架電日時</label><input class="in" type="datetime-local" id="pTel" value="${nowLocal()}"></div>
+          <div><label class="f">結果</label><select class="in" id="pResult"><option value="">— 選ぶ —</option>${P.me.results.map(r => `<option>${esc(r)}</option>`).join('')}</select></div></div>
+        <div class="row2"><div><label class="f">相手の名前</label><input class="in" id="pWho" maxlength="60"></div><div><label class="f">部署・役職</label><input class="in" id="pDept" maxlength="80"></div></div>
+        <div class="row2"><div class="appo-row"><label class="f">アポ日時</label><input class="in" type="datetime-local" id="pAppo"><div id="pAppoHint"></div></div>
+          <div class="recall-row"><label class="f">次にかける日</label><input class="in" type="date" id="pNext"></div></div>
+        ${docsFields('p', false)}
+        <label class="f">電話のメモ</label><textarea class="in" id="pMemo" maxlength="5000" placeholder="例: 板金は協力工場3社。大物で困ることがある。来月また"></textarea>
+        <div class="actions"><button class="btn primary" id="pSave">記録する</button></div>
+        <div class="note">「アポ獲得」「資料送付」を記録すると、そのまま先方の案件になり、「記録」タブにも出ます。</div></div></div>` : ''}
+    <div class="sec"><div class="sec-t">電話の記録（新しい順）</div><div class="tl">${calls}</div></div>`;
+  document.body.classList.add('detail');
+  $('lBack').onclick = () => { document.body.classList.remove('detail'); L.sel = null; renderLList(); };
+  $('pDone').onclick = async () => {
+    try { await api(`/api/partner/prospects/${p.id}/done`, { method: 'POST', body: JSON.stringify({ done: !p.done }) });
+      toast(p.done ? '未完了に戻しました' : '完了にしました'); await loadRows(); await openProspect(p.id); } catch (e) { toast(e.message); }
+  };
+  if ($('lToDeal')) $('lToDeal').onclick = () => { switchView('list'); openDeal(p.deal.id); };
+  if ($('pSave')) {
+    const tg = () => { const r = $('pResult').value;
+      $('lPanel').querySelector('.appo-row').style.display = $('lPanel').querySelector('.recall-row').style.display = r === '資料送付' ? 'none' : '';
+      $('lPanel').querySelector('.appo-row').style.visibility = (r === 'アポ獲得' || !r) ? 'visible' : 'hidden';
+      $('lPanel').querySelector('.recall-row').style.visibility = (r === '再コール' || r === '担当者不在' || !r) ? 'visible' : 'hidden';
+      $('pDocs').style.display = r === '資料送付' ? '' : 'none'; };
+    $('pResult').onchange = tg; tg();
+    $('pAppo').addEventListener('change', () => appoHint('pAppo', 'pAppoHint'));
+    $('pSave').onclick = async () => {
+      const body = { list_id: L.cur ? L.cur.id : null, telapo_at: $('pTel').value || null, result: $('pResult').value || null, appo_at: $('pAppo').value || null,
+        next_call_on: $('pNext').value || null, contact: $('pWho').value, department: $('pDept').value, memo: $('pMemo').value, docs: docsVal('p') };
+      if (!body.result && !body.memo.trim() && !body.appo_at) { toast('結果かメモを入れてください'); return; }
+      $('pSave').disabled = true;
+      try {
+        const r = await api(`/api/partner/prospects/${p.id}/calls`, { method: 'POST', body: JSON.stringify(body) });
+        toast(r.docs ? '記録しました。先方に資料の送付をお願いしました（記録タブに出ます）' : r.deal_id ? 'アポを記録しました。先方の案件になりました' : '記録しました'); C.cache = {};
+        await loadRows(); await openProspect(p.id);
+      } catch (e) { toast(e.message); $('pSave').disabled = false; }
+    };
+  }
+  if (window.innerWidth <= 860) window.scrollTo(0, 0);
+}
+
+$('lUpBtn').onclick = () => { delete $('upListName').dataset.typed; $('upFile').value = ''; $('upName').textContent = 'ここにドラッグしてもかまいません'; $('upListName').value = ''; $('upModal').classList.add('open'); };
+$('upCancel').onclick = () => $('upModal').classList.remove('open');
+$('upModal').onclick = e => { if (e.target === $('upModal')) $('upModal').classList.remove('open'); };
+const upPick = () => { const f = $('upFile').files[0]; $('upName').textContent = f ? f.name : ''; if (f && !$('upListName').dataset.typed) $('upListName').value = f.name.replace(/\.[^.]+$/, '').slice(0, 80); };
+$('upListName').oninput = () => { $('upListName').dataset.typed = '1'; };
+$('upFile').onchange = upPick;
+$('upDrop').ondragover = e => e.preventDefault();
+$('upDrop').ondrop = e => { e.preventDefault(); if (e.dataTransfer.files.length) { $('upFile').files = e.dataTransfer.files; upPick(); } };
+$('upGo').onclick = async () => {
+  const f = $('upFile').files[0];
+  if (!f) { toast('ファイルを選んでください'); return; }
+  const fd = new FormData(); fd.append('file', f); fd.append('name', $('upListName').value);
+  $('upGo').disabled = true;
+  try {
+    const r = await fetch('/api/partner/lists', { method: 'POST', body: fd, credentials: 'include' });
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 401) { showLogin(); return; }
+    if (!r.ok) throw new Error(typeof j.detail === 'string' ? j.detail : 'アップロードできませんでした');
+    const cc = j.colors || {};
+    const read = [cc.appo ? `アポ${cc.appo}` : '', cc.follow ? `資料送付・再架電${cc.follow}` : '', cc.ng ? `かけない${cc.ng}` : '', cc.hold ? `保留${cc.hold}` : '', j.done ? `完了${j.done}` : ''].filter(Boolean);
+    $('upModal').classList.remove('open'); toast(`${j.rows}社のリストを共有しました${read.length ? `（色から: ${read.join('・')}）` : ''}`);
+    L.cur = { id: j.id }; L.tab = 'all'; L.tabSet = true; await loadLists(true);
+  } catch (e) { toast(e.message); }
+  finally { $('upGo').disabled = false; }
+};
+
+// ── 予定・空き（名前と時間帯だけ） ──
+const C = { month: null, sel: null, events: [], slots: {}, cache: {} };
+const WD = ['日', '月', '火', '水', '木', '金', '土'];
+const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const hm = m => `${Math.floor(m / 60)}:${pad(m % 60)}`;
+async function calFetch(from, to) {
+  const key = from + to;
+  if (!C.cache[key]) C.cache[key] = api(`/api/partner/calendar?frm=${from}&to=${to}`);
+  return C.cache[key];
+}
+function gridStart(m) { const f = new Date(m.getFullYear(), m.getMonth(), 1); const s = new Date(f); s.setDate(1 - f.getDay()); return s; }
+async function renderCal() {
+  if (!C.month) { const t = new Date(); C.month = new Date(t.getFullYear(), t.getMonth(), 1); C.sel = ymd(t); }
+  const s = gridStart(C.month), e = new Date(s); e.setDate(s.getDate() + 41);
+  const data = await calFetch(ymd(s), ymd(e));
+  C.events = data.events; C.slots = data.slots;
+  $('cTitle').textContent = `${C.month.getFullYear()}年 ${C.month.getMonth() + 1}月`;
+  const today = ymd(new Date());
+  let h = WD.map((w, i) => `<div class="wd w${i}">${w}</div>`).join('');
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(s); d.setDate(s.getDate() + i); const k = ymd(d);
+    const evs = C.events.filter(x => x.day === k);
+    const allDay = evs.filter(x => x.all_day && x.kind === 'event');
+    const bars = ['am', 'pm1', 'pm2'].map(sl => { const r = C.slots[sl]; return `<span class="${evs.some(x => x.start < r.end && x.end > r.start) ? 'b' : ''} ${allDay.length ? 'ad' : ''}"></span>`; }).join('');
+    h += `<button class="day w${d.getDay()} ${d.getMonth() !== C.month.getMonth() ? 'out' : ''} ${k < today ? 'past' : ''} ${k === today ? 'today' : ''} ${k === C.sel ? 'sel' : ''}" data-d="${k}">
+      <span class="dn">${d.getDate()}</span>${allDay.length ? `<span class="adl">終日</span>` : ''}${evs.filter(x => !(x.all_day && x.kind === 'event')).slice(0, allDay.length ? 1 : 2).map(x => `<span class="pl">${esc(x.person)} ${esc(x.kind === 'appo' ? 'アポ' : x.label)}</span>`).join('')}
+      <span class="slots3">${bars}</span></button>`;
+  }
+  $('cGrid').innerHTML = h;
+  $('cGrid').querySelectorAll('[data-d]').forEach(b => b.onclick = () => { C.sel = b.dataset.d; renderCal(); });
+  renderSide();
+}
+function busyAt(evs, start, end) { return evs.filter(x => x.start < end && x.end > start); }
+function renderSide() {
+  const k = C.sel; const d = new Date(k + 'T00:00:00');
+  const evs = C.events.filter(x => x.day === k);
+  const rows = ['am', 'pm1', 'pm2'].map(sl => { const r = C.slots[sl]; const who = [...new Set(busyAt(evs, r.start, r.end).map(x => x.person))];
+    return `<div class="s3 ${who.length ? 'busy' : ''}"><b>${esc(r.label)}</b><span>${hm(r.start)}〜${hm(r.end)}・${who.length ? esc(who.join('・')) + ' 予定あり' : '空き'}</span></div>`; }).join('');
+  const ad = [...new Set(evs.filter(x => x.all_day && x.kind === 'event').map(x => x.person))];
+  $('cSide').innerHTML = `<h3>${d.getMonth() + 1}月${d.getDate()}日（${WD[d.getDay()]}）</h3>
+    ${ad.length ? `<div class="adn">${ico('ban')} <b>${esc(ad.join('・'))}</b> はこの日 <b>終日</b> 予定があります（一日空いていません）</div>` : ''}<div class="sum3">${rows}</div>
+    <div class="busy-list">${evs.map(x => `<div class="bl"><i style="background:${esc(x.color)}"></i>${esc(x.person)}<em>${x.all_day ? (x.kind === 'appo' ? 'アポ（時間未定）' : '終日') : `${hm(x.start)}〜${hm(x.end)}${x.kind === 'appo' ? ' アポ' : ''}`}</em></div>`).join('')
+      || '<div class="note">この日は予定がありません</div>'}</div>`;
+}
+$('cPrev').onclick = () => { C.month = new Date(C.month.getFullYear(), C.month.getMonth() - 1, 1); renderCal(); };
+$('cNext').onclick = () => { C.month = new Date(C.month.getFullYear(), C.month.getMonth() + 1, 1); renderCal(); };
+function switchView(v) {
+  document.querySelectorAll('.views [data-v]').forEach(x => x.classList.toggle('on', x.dataset.v === v));
+  $('listView').style.display = v === 'list' ? '' : 'none'; $('calView').style.display = v === 'cal' ? '' : 'none';
+  $('listsView').style.display = v === 'lists' ? '' : 'none';
+  $('newBtn').style.display = v === 'lists' ? 'none' : '';
+  document.body.classList.remove('detail');
+  if (v === 'cal') { C.cache = {}; renderCal().catch(e => toast(e.message)); }
+  if (v === 'lists') loadLists(true).catch(e => toast(e.message));
+  if (v === 'list') loadList().catch(e => toast(e.message));
+}
+document.querySelectorAll('.views [data-v]').forEach(b => b.onclick = () => switchView(b.dataset.v));
+
+// アポ日時を入れたら、その時間に予定があるか知らせる
+async function appoHint(inputId, hintId) {
+  const v = $(inputId).value; const box = $(hintId);
+  if (!v) { box.innerHTML = ''; return; }
+  try {
+    const day = v.slice(0, 10); const m = Number(v.slice(11, 13)) * 60 + Number(v.slice(14, 16));
+    const data = await calFetch(day, day);
+    const hit = busyAt(data.events.filter(x => x.day === day), m, m + 60);
+    box.innerHTML = hit.length
+      ? `<div class="conflict ng">この時間は ${esc([...new Set(hit.map(x => x.person))].join('・'))} の予定があります。「予定・空き」で空いている時間を確かめてください</div>`
+      : '<div class="conflict ok">この時間は予定が入っていません</div>';
+  } catch { box.innerHTML = ''; }
+}
+$('nAppo').addEventListener('change', () => appoHint('nAppo', 'nAppoHint'));
+document.addEventListener('change', e => { if (e.target && e.target.id === 'cAppo') appoHint('cAppo', 'cAppoHint'); });
+
+(async () => {
+  try { await start(); } catch { showLogin(); }
+})();
+</script>
+</body>
+</html>

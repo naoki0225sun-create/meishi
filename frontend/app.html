@@ -6,7 +6,9 @@
   <meta name="theme-color" content="#2556E8">
   <title>名刺管理</title>
   <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/split.css">
   <link rel="stylesheet" href="/dedupe.css">
+  <link rel="stylesheet" href="/theme.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -106,6 +108,7 @@
 
     <!-- 一括選択バー (v6.5) -->
     <div class="bulk-select-bar" id="bulkSelectBar">
+      <div id="cardSortBox" class="card-sort-box"></div>
       <button class="bulk-select-btn" id="bulkSelectBtn">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="9 11 12 14 22 4"/>
@@ -302,5 +305,6 @@
   </div>
 
   <script src="/app.js"></script>
+  <script src="/split.js"></script>
 </body>
 </html>

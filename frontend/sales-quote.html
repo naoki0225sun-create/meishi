@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>御見積書</title>
+<style>
+  :root { --ink: #1d2433; --sub: #5b6475; --line: #cfd5df; --accent: #2556E8; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #eef1f5; color: var(--ink); font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif; }
+  .bar { position: sticky; top: 0; z-index: 2; display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap;
+    padding: 10px 16px; background: #fff; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .bar button { appearance: none; border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 7px 14px; font-size: 13px; cursor: pointer; font-family: inherit; }
+  .bar button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+  .bar .hint { color: var(--sub); }
+  .sheet { width: 210mm; min-height: 297mm; margin: 18px auto; background: #fff; padding: 18mm 16mm 16mm; box-shadow: 0 6px 24px rgba(0,0,0,.08); }
+  h1 { text-align: center; font-size: 24px; letter-spacing: .6em; margin: 0 0 18px; padding-bottom: 6px; border-bottom: 3px double var(--ink); }
+  .top { display: flex; justify-content: space-between; gap: 20px; }
+  .to { flex: 1; }
+  .to .company { font-size: 18px; font-weight: 700; border-bottom: 1px solid var(--ink); padding-bottom: 4px; display: inline-block; min-width: 70%; }
+  .to .person { margin-top: 6px; font-size: 14px; }
+  .meta { font-size: 12px; text-align: right; line-height: 1.8; }
+  .from { margin-top: 10px; font-size: 12px; line-height: 1.7; white-space: pre-wrap; text-align: right; }
+  .lead { margin: 18px 0 8px; font-size: 13px; }
+  .total-box { display: flex; align-items: baseline; gap: 16px; border-bottom: 2px solid var(--ink); padding: 6px 2px; width: 60%; }
+  .total-box .lbl { font-size: 14px; }
+  .total-box .val { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .conds { margin: 14px 0; font-size: 12.5px; display: grid; grid-template-columns: 90px 1fr; gap: 4px 10px; }
+  .conds div:nth-child(odd) { color: var(--sub); }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12.5px; }
+  th { background: #f2f4f8; border: 1px solid var(--line); padding: 6px 6px; font-weight: 600; }
+  td { border: 1px solid var(--line); padding: 6px 6px; vertical-align: top; }
+  td.num, th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .sum td { border: none; padding: 3px 6px; }
+  .sum td.lbl { text-align: right; color: var(--sub); }
+  .sum tr.grand td { font-weight: 700; font-size: 14px; border-top: 1px solid var(--ink); }
+  .note { margin-top: 16px; font-size: 12px; min-height: 40px; border: 1px solid var(--line); padding: 8px; white-space: pre-wrap; }
+  [contenteditable] { outline: none; border-radius: 3px; }
+  [contenteditable]:hover { background: #fff8db; }
+  [contenteditable]:focus { background: #fff3c2; }
+  .empty { text-align: center; color: var(--sub); padding: 60px 0; }
+  @page { size: A4; margin: 0; }
+  @media print {
+    body { background: #fff; }
+    .bar { display: none; }
+    .sheet { margin: 0; box-shadow: none; width: auto; min-height: auto; }
+    [contenteditable]:hover, [contenteditable]:focus { background: none; }
+  }
+  @media (max-width: 860px) { .sheet { width: auto; margin: 10px; padding: 18px 14px; } .top { flex-direction: column; } .total-box { width: 100%; } }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <button class="primary" onclick="window.print()">印刷・PDFで保存</button>
+    <span class="hint">黄色くなる所はクリックで直せます（この画面だけの変更です）</span>
+    <button onclick="window.close()">閉じる</button>
+  </div>
+  <div class="sheet" id="sheet"><div class="empty">読み込み中…</div></div>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => s == null ? '' : String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const yen = n => '¥' + Number(n || 0).toLocaleString('ja-JP');
+const pad = n => String(n).padStart(2, '0');
+async function api(p) {
+  const r = await fetch(p, { credentials: 'include' });
+  if (r.status === 401) { location.href = '/'; throw new Error('401'); }
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || `HTTP ${r.status}`);
+  return r.json();
+}
+(async () => {
+  const id = Number(new URLSearchParams(location.search).get('deal'));
+  if (!id) { $('sheet').innerHTML = '<div class="empty">案件が指定されていません</div>'; return; }
+  try {
+    const [d, ex, meta] = await Promise.all([api(`/api/sales/deals/${id}`), api('/api/sales/settings/extra'),
+      api('/api/sales/meta').catch(() => ({}))]);
+    const prof = (meta && meta.profile) || { key: 'sheet', items: {} };
+    const L = { name: '品名', qty: '数量', quote_spec: '材質・板厚', ...(prof.items || {}) };
+    const panel = prof.key === 'panel';
+    const card = d.card || {};
+    const items = d.items || [];
+    const today = new Date();
+    const valid = new Date(today.getTime() + 30 * 864e5);
+    const ymd = t => `${t.getFullYear()}年${t.getMonth() + 1}月${t.getDate()}日`;
+    const no = `Q${String(today.getFullYear()).slice(2)}${pad(today.getMonth() + 1)}${pad(today.getDate())}-${id}`;
+    const sub = items.reduce((n, x) => n + (x.subtotal || 0), 0) || (items.length ? 0 : (d.amount || 0));
+    const tax = Math.floor(sub * 0.1);
+    const company = card.company || d.company_snapshot || '';
+    const person = card.name || d.contact_snapshot || '';
+    const dept = card.department_position || '';
+    const rows = items.length ? items.map((x, i) => `<tr>
+        <td class="num">${i + 1}</td>
+        <td contenteditable>${esc(x.name)}</td>
+        <td contenteditable>${esc([x.material, x.thickness ? (panel ? x.thickness : 't' + x.thickness) : ''].filter(Boolean).join(' '))}</td>
+        <td class="num" contenteditable>${x.qty ?? ''}</td><td class="num" contenteditable>${x.unit_price != null ? Number(x.unit_price).toLocaleString('ja-JP') : ''}</td>
+        <td class="num">${x.subtotal != null ? Number(x.subtotal).toLocaleString('ja-JP') : ''}</td></tr>`).join('')
+      : `<tr><td class="num">1</td><td contenteditable>${esc(d.title)}</td><td contenteditable></td><td class="num" contenteditable>1</td>
+         <td class="num" contenteditable>${d.amount ? Number(d.amount).toLocaleString('ja-JP') : ''}</td><td class="num">${d.amount ? Number(d.amount).toLocaleString('ja-JP') : ''}</td></tr>`;
+    document.title = `御見積書_${company}_${no}`;
+    $('sheet').innerHTML = `
+      <h1>御見積書</h1>
+      <div class="top">
+        <div class="to">
+          <div class="company" contenteditable>${esc(company)} 御中</div>
+          <div class="person" contenteditable>${esc([dept, person ? person + ' 様' : ''].filter(Boolean).join('　'))}</div>
+          <div class="lead" contenteditable>下記のとおり御見積申し上げます。</div>
+          <div class="total-box"><span class="lbl">御見積金額（税込）</span><span class="val">${yen(sub + tax)}</span></div>
+          <div class="conds">
+            <div>件名</div><div contenteditable>${esc(d.title)}</div>
+            ${d.site_name ? `<div>現場名</div><div contenteditable>${esc(d.site_name)}</div>` : ''}
+            <div>納期</div><div contenteditable>${panel ? '承認図ご返却後 約1〜2か月（主要機器の納期により前後します）' : '別途ご相談'}</div>
+            <div>受渡場所</div><div contenteditable>貴社指定場所</div>
+            <div>支払条件</div><div contenteditable>従来どおり</div>
+            <div>有効期限</div><div contenteditable>${ymd(valid)}</div>
+          </div>
+        </div>
+        <div>
+          <div class="meta">見積番号 <span contenteditable>${no}</span><br>発行日 <span contenteditable>${ymd(today)}</span></div>
+          <div class="from" contenteditable>${esc(ex.company_info || ex.tenant_name || '')}</div>
+        </div>
+      </div>
+      <table>
+        <thead><tr><th style="width:6%">No</th><th>${esc(L.name)}</th><th style="width:${panel ? 26 : 18}%">${esc(L.quote_spec)}</th><th class="num" style="width:9%">${esc(L.qty)}</th><th class="num" style="width:14%">単価</th><th class="num" style="width:15%">金額</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <table class="sum" style="width:45%;margin-left:auto">
+        <tr><td class="lbl">小計</td><td class="num">${yen(sub)}</td></tr>
+        <tr><td class="lbl">消費税（10%）</td><td class="num">${yen(tax)}</td></tr>
+        <tr class="grand"><td class="lbl">合計</td><td class="num">${yen(sub + tax)}</td></tr>
+      </table>
+      <div class="note" contenteditable>備考：${ex.company_info ? '' : '（設定 → 連携 で自社情報を入れると右上に載ります）'}</div>`;
+  } catch (e) {
+    $('sheet').innerHTML = `<div class="empty">${esc(e.message)}</div>`;
+  }
+})();
+</script>
+</body>
+</html>

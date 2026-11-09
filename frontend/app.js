@@ -11,6 +11,7 @@ const state = {
   activeFilter: 'all',
   activeTag: null,
   activeAssignedTo: null,  // v6.8 担当者フィルター
+  sort: (() => { try { return localStorage.getItem('cards.sort') || 'company'; } catch { return 'company'; } })(),
   tenant: null,
   editingNote: false,
   addingTag: false,
@@ -88,7 +89,7 @@ const FIELD_DEFS = [
   { key: 'mobile',              label: '携帯',      type: 'tel',      placeholder: '090-1234-5678' },
   { key: 'phone',               label: '会社電話',  type: 'tel',      placeholder: '03-1234-5678' },
   { key: 'address',             label: '住所',      type: 'textarea', placeholder: '〒...' },
-  { key: 'website',             label: 'サイト',    type: 'url',      placeholder: 'example.com' },
+  { key: 'website',             label: '公式サイト', type: 'url',      placeholder: 'example.com' },
   { key: 'assigned_to',         label: '所有者',    type: 'text',     placeholder: '所有者名を入力' },
 ];
 
@@ -191,6 +192,7 @@ async function init() {
     location.href = '/';
     return;
   }
+  renderSortSelect();
   await Promise.all([loadCards(), loadTags(), loadDupesCount()]);
 }
 
@@ -358,17 +360,7 @@ function renderList() {
   }
 
   const q = state.searchQuery;
-  els.listPane.innerHTML = groups.map(group => {
-    const color = colorForCompany(group.company_normalized);
-    const head = `
-      <div class="company-group-head">
-        <div class="company-dot" style="background:${color.fg}"></div>
-        <div class="company-name">${highlight(group.company, q)}</div>
-        <div class="company-count">${group.cards.length}名</div>
-      </div>
-    `;
-    return `<div class="company-group">${head}${group.cards.map(c => rowHtml(c, q, color)).join('')}</div>`;
-  }).join('');
+  els.listPane.innerHTML = listSectionsHtml(groups, q);
 
   // 行クリック
   els.listPane.querySelectorAll('.row').forEach(el => {
@@ -396,7 +388,100 @@ function renderList() {
   });
 }
 
-function rowHtml(card, q, color) {
+// ============================================================
+// 並び替え
+// ============================================================
+const CARD_SORTS = [
+  ['company', '会社名順'],
+  ['company_size', '人数の多い会社順'],
+  ['recent', '登録が新しい順'],
+  ['oldest', '登録が古い順'],
+  ['name', '名前順（ふりがな）'],
+  ['owner', '所有者順'],
+  ['note', 'メモ・タグがある人を先に'],
+];
+const regDate = c => {
+  const m = String(c.registered_date || '').match(/(\d{4})[\/.-](\d{1,2})[\/.-](\d{1,2})/);
+  return m ? `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}` : '';
+};
+const KANA_ROWS = [['あ', 'あ-お'], ['か', 'か-ご'], ['さ', 'さ-ぞ'], ['た', 'た-ど'], ['な', 'な-の'], ['は', 'は-ぽ'], ['ま', 'ま-も'], ['や', 'ゃ-よ'], ['ら', 'ら-ろ'], ['わ', 'ゎ-ん']];
+function kanaKey(c) {
+  const k = (c.name_kana || '').trim().replace(/[\u30a1-\u30f6]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0x60));
+  return k || '';
+}
+function kanaRow(c) {
+  const ch = kanaKey(c)[0];
+  if (!ch) return 'ふりがな未登録';
+  const row = KANA_ROWS.find(([, r]) => { const [a, b] = r.split('-'); return ch >= a && ch <= b; });
+  return row ? `${row[0]}行` : 'その他';
+}
+
+function listSectionsHtml(groups, q) {
+  const sort = state.sort || 'company';
+  const groupHtml = group => {
+    const color = colorForCompany(group.company_normalized);
+    return `<div class="company-group">
+      <div class="company-group-head">
+        <div class="company-dot" style="background:${color.fg}"></div>
+        <div class="company-name">${highlight(group.company, q)}</div>
+        <div class="company-count">${group.cards.length}名</div>
+      </div>${group.cards.map(c => rowHtml(c, q, color)).join('')}</div>`;
+  };
+  if (sort === 'company' || sort === 'company_size') {
+    const gs = sort === 'company_size'
+      ? [...groups].sort((a, b) => b.cards.length - a.cards.length || a.company.localeCompare(b.company, 'ja'))
+      : groups;
+    return gs.map(groupHtml).join('');
+  }
+  // 会社をまたいで並べる（見出しは月・行・所有者など）
+  const cards = groups.flatMap(g => g.cards.map(c => ({ c, norm: g.company_normalized })));
+  const cmpStr = (x, y) => (x || '\uffff').localeCompare(y || '\uffff', 'ja');
+  let sections;
+  if (sort === 'recent' || sort === 'oldest') {
+    cards.sort((a, b) => { const x = regDate(a.c), y = regDate(b.c);
+      if (!x || !y) return !x && !y ? 0 : !x ? 1 : -1;
+      return sort === 'recent' ? y.localeCompare(x) : x.localeCompare(y); });
+    sections = c => { const d = regDate(c); return d ? `${d.slice(0, 4)}年${Number(d.slice(5, 7))}月` : '登録日なし'; };
+  } else if (sort === 'name') {
+    cards.sort((a, b) => cmpStr(kanaKey(a.c) || a.c.name, kanaKey(b.c) || b.c.name));
+    sections = kanaRow;
+  } else if (sort === 'owner') {
+    const owner = c => ((c.assigned_to_list && c.assigned_to_list[0]) || c.assigned_to || '');
+    cards.sort((a, b) => cmpStr(owner(a.c), owner(b.c)) || cmpStr(a.c.company, b.c.company));
+    sections = c => owner(c) || '所有者なし';
+  } else {
+    const has = c => ((c.note || '').trim() || (c.tags || []).length) ? 0 : 1;
+    cards.sort((a, b) => has(a.c) - has(b.c) || cmpStr(a.c.company, b.c.company));
+    sections = c => has(c) ? 'メモ・タグなし' : 'メモ・タグあり';
+  }
+  let html = '', cur = null, n = 0, buf = '';
+  const flush = () => { if (cur !== null) html += `<div class="company-group"><div class="company-group-head sort-head">
+      <div class="company-name">${escapeHtml(cur)}</div><div class="company-count">${n}名</div></div>${buf}</div>`; };
+  cards.forEach(({ c, norm }) => {
+    const sec = sections(c);
+    if (sec !== cur) { flush(); cur = sec; n = 0; buf = ''; }
+    n++;
+    buf += rowHtml(c, q, colorForCompany(norm), true);
+  });
+  flush();
+  return html;
+}
+
+function renderSortSelect() {
+  const box = document.getElementById('cardSortBox');
+  if (!box) return;
+  box.innerHTML = `<label class="card-sort" title="並び替え">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h13M3 12h9M3 18h5"/><path d="M18 8v12M15 17l3 3 3-3"/></svg>
+    <select id="cardSort">${CARD_SORTS.map(([k, l]) => `<option value="${k}" ${k === state.sort ? 'selected' : ''}>${escapeHtml(l)}</option>`).join('')}</select></label>`;
+  box.querySelector('#cardSort').onchange = e => {
+    state.sort = e.target.value;
+    try { localStorage.setItem('cards.sort', state.sort); } catch { /* 無視 */ }
+    renderList();
+    els.listPane.scrollTop = 0;
+  };
+}
+
+function rowHtml(card, q, color, showCompany = false) {
   const active = card.id === state.selectedId ? 'row-active' : '';
   const initial = getInitial(card.name);
   const hasNote = (card.note || '').trim().length > 0;
@@ -426,7 +511,9 @@ function rowHtml(card, q, color) {
       <div class="avatar" style="${avatarStyle}">${escapeHtml(initial)}</div>
       <div class="row-body">
         <div class="row-name">${highlight(card.name || '(名前なし)', q)}</div>
-        <div class="row-role">${highlight(card.department_position || '—', q)}</div>
+        <div class="row-role">${showCompany
+          ? `<span class="row-company">${highlight(card.company || '', q)}</span>${card.department_position ? ' · ' + highlight(card.department_position, q) : ''}`
+          : highlight(card.department_position || '—', q)}</div>
       </div>
       ${noteBadge}
     </div>
@@ -463,6 +550,36 @@ function selectCard(id) {
 function renderDetailInto(container, card) {
   container.innerHTML = detailHtml(card);
   attachDetailHandlers(container, card);
+  loadCardDeals(container, card);
+}
+
+// ── 営業との連携：この人の案件 ──
+const cardDealsCache = {};
+async function loadCardDeals(container, card) {
+  const box = container.querySelector(`[data-card-deals="${CSS.escape(card.id)}"]`);
+  if (!box) return;
+  const hit = cardDealsCache[card.id];
+  let deals;
+  try {
+    if (hit && Date.now() - hit.at < 30000) deals = hit.deals;
+    else {
+      deals = (await api(`/api/sales/deals?card_id=${encodeURIComponent(card.id)}`)).deals || [];
+      cardDealsCache[card.id] = { at: Date.now(), deals };
+    }
+  } catch { box.remove(); return; }
+  const list = box.querySelector('.cd-list');
+  if (!deals.length) {
+    list.innerHTML = `<div class="cd-empty">案件はまだありません　<a href="/sales.html?new=${encodeURIComponent(card.id)}">＋ 案件を作成</a></div>`;
+    return;
+  }
+  list.innerHTML = deals.map(d => `
+    <a class="cd-row" href="/sales.html?deal=${d.id}">
+      <span class="cd-no">#${d.id}</span>
+      <span class="cd-title">${escapeHtml(d.title)}</span>
+      <span class="cd-stage">${escapeHtml(d.stage)}</span>
+      ${d.owner ? `<span class="cd-owner">${escapeHtml(d.owner)}</span>` : ''}
+      ${d.amount ? `<span class="cd-amt">¥${Number(d.amount).toLocaleString('ja-JP')}</span>` : ''}
+    </a>`).join('');
 }
 
 function detailHtml(card) {
@@ -564,6 +681,11 @@ function detailHtml(card) {
               ${registeredRow}
             </div>
             ${editActionBar}
+          </div>
+
+          <div class="detail-section card-deals" data-card-deals="${escapeHtml(card.id)}">
+            <div class="section-label"><span>この人の案件（営業）</span></div>
+            <div class="cd-list"><div class="cd-empty">読み込み中…</div></div>
           </div>
 
           <div class="detail-section">
@@ -713,6 +835,17 @@ function fieldRowHtml(card, def, overrides) {
 
   // View mode
   let display;
+  if (!value && def.key === 'website' && siteFromEmail(card.email)) {
+    const cand = siteFromEmail(card.email);
+    return `
+    <div class="field-row is-editable" data-field-click="${def.key}">
+      <div class="field-label">${escapeHtml(def.label)}</div>
+      <div class="field-value"><div class="field-value-wrap">
+        <span class="site-cand">候補 <a href="${escapeHtml(cand)}" target="_blank" rel="noopener">${escapeHtml(cand.replace(/^https:\/\//, ''))}</a>
+          <button class="site-cand-btn" data-act="use-site" data-url="${escapeHtml(cand)}">これにする</button></span>
+      </div></div>
+    </div>`;
+  }
   if (!value) {
     display = `<span class="empty-value"></span>`;
   } else if (def.type === 'email') {
@@ -818,6 +951,7 @@ function attachDetailHandlers(container, card) {
       else if (act === 'edit-all-save') saveEditAll(card);
       else if (act === 'open-lightbox') openImageLightbox(el.dataset.src);
       else if (act === 'swap-images') swapCardImages(card);
+      else if (act === 'use-site') saveField(card, 'website', el.dataset.url);
       else if (act === 'delete-card') deleteCard(card);
     });
   });
@@ -1004,6 +1138,14 @@ function startEditHeaderField(card, field, el) {
       else cancel();
     });
   }
+}
+
+// メールのドメインから公式サイトの候補（フリーメール・携帯・プロバイダは除く）
+const FREE_MAIL = /(^|\.)(gmail\.com|googlemail\.com|yahoo\.co\.jp|yahoo\.com|ymail\.ne\.jp|icloud\.com|me\.com|mac\.com|outlook\.(com|jp)|hotmail\.(com|co\.jp)|live\.(jp|com)|msn\.com|docomo\.ne\.jp|ezweb\.ne\.jp|au\.com|softbank\.ne\.jp|i\.softbank\.jp|ymobile\.ne\.jp|rakuten\.jp|nifty\.(com|ne\.jp)|ocn\.ne\.jp|so-net\.ne\.jp|biglobe\.ne\.jp|plala\.or\.jp|eonet\.ne\.jp|zaq\.ne\.jp|kcn\.ne\.jp|dion\.ne\.jp|odn\.ne\.jp|infoweb\.ne\.jp|mbr\.nifty\.com|aol\.com|wakwak\.com|hi-ho\.ne\.jp|bb\.excite\.co\.jp|jcom\.home\.ne\.jp|home\.ne\.jp|people\.or\.jp|sannet\.ne\.jp|gaia\.eonet\.ne\.jp)$/i;
+function siteFromEmail(email) {
+  const m = String(email || '').trim().match(/@([a-z0-9.-]+\.[a-z]{2,})$/i);
+  if (!m || FREE_MAIL.test(m[1])) return '';
+  return 'https://' + m[1].toLowerCase().replace(/^(mail|mx|smtp)\./, '');
 }
 
 async function saveField(card, field, rawValue) {

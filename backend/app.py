@@ -21,7 +21,7 @@ from typing import Optional
 
 import yaml
 import bcrypt
-from fastapi import FastAPI, HTTPException, Response, Depends, Cookie, UploadFile, File, Form, Header, Query
+from fastapi import FastAPI, HTTPException, Response, Depends, Cookie, UploadFile, File, Form, Header, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -36,9 +36,17 @@ import db
 import dupes
 import mailer
 import sales  # 営業モジュール
+import loginguard  # ログイン失敗の回数制限
 import slack_bot  # Slack連携
 import dedupe  # 名刺の一括重複整理
 import intake  # 資料取り込み
+import advisor  # 営業部長（アドバイザー）
+import calendar_feed  # カレンダー連携（iCalendar）
+import digest  # AI議事録・メモからの追記
+import vendor  # テレアポ業者との連携
+import teamcal  # みんなの予定（共有カレンダー）
+import prospects  # テレアポリストの共有・判定・AI調査
+import vendorreq  # 業者とのやりとり（再テレアポの依頼・資料送付）
 
 load_dotenv()
 
@@ -72,7 +80,8 @@ app = FastAPI(title="名刺管理アプリ v5")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    # 画面は同じドメインから開くので、よそのサイトからの呼び出しは許さない（必要なら .env の CORS_ORIGINS にカンマ区切りで足す）
+    allow_origins=[o.strip() for o in os.getenv("CORS_ORIGINS", "https://meishi.wako-apps.com").split(",") if o.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -86,6 +95,12 @@ def on_startup():
     slack_bot.init_db()
     dedupe.init_db()
     intake.init_db()
+    digest.init_db()
+    vendor.init_db()
+    teamcal.init_db()
+    prospects.init_db()
+    vendorreq.init_db()
+    prospects.start_worker()
     os.makedirs(IMAGES_DIR, exist_ok=True)
 
 
@@ -330,9 +345,22 @@ def list_tenants_public():
 
 
 @app.post("/api/login")
-def login(req: LoginRequest, response: Response):
+def login(req: LoginRequest, response: Response, request: Request):
+    ip = loginguard.client_ip(request)
+    account = (req.tenant_id or "")[:64]
+    locked, wait = loginguard.check("app", account, ip, reserve=True)
+    if locked:
+        raise HTTPException(status_code=429, detail=f"パスワードの間違いが続いたため、あと{wait}分ほど待ってからお試しください")
+    try:
+        return _login(req, response, ip, account)
+    finally:
+        loginguard.release("app", account, ip)
+
+
+def _login(req: LoginRequest, response: Response, ip: str, account: str):
     tenant = get_tenant(req.tenant_id)
     if not tenant:
+        loginguard.fail("app", account, ip)
         import time; time.sleep(0.5)
         raise HTTPException(status_code=401, detail="認証に失敗しました")
 
@@ -340,9 +368,11 @@ def login(req: LoginRequest, response: Response):
     if not password_hash or password_hash.startswith("★") or password_hash.startswith("VPS"):
         raise HTTPException(status_code=500, detail="パスワードが未設定のテナントです")
 
-    if not bcrypt.checkpw(req.password.encode("utf-8"), password_hash.encode("utf-8")):
+    if not bcrypt.checkpw(req.password.encode("utf-8")[:72], password_hash.encode("utf-8")):
+        loginguard.fail("app", account, ip, tenant_id=req.tenant_id, label=tenant.get("name") or req.tenant_id)
         import time; time.sleep(0.5)
         raise HTTPException(status_code=401, detail="認証に失敗しました")
+    loginguard.success("app", account, ip)
 
     token = secrets.token_urlsafe(32)
     active_sessions[token] = {
@@ -1043,8 +1073,24 @@ def delete_cards(req: CardDeleteRequest, session: dict = Depends(check_session))
 
 
 # ── 営業モジュール ──
-app.include_router(sales.build_router(check_session, fetch_cards, get_tenant))
+_sales_router = sales.build_router(check_session, fetch_cards, get_tenant, list_tenants=load_tenants)
+app.include_router(_sales_router)
+app.include_router(calendar_feed.build_router(slack_bot.app_url,
+                                              lambda t: (get_tenant(t) or {}).get("display_name") or t))
+app.include_router(advisor.build_router(check_session, fetch_cards, get_tenant,
+                                        load_all=_sales_router.load_all, load_deal=_sales_router.load_deal))
 app.include_router(intake.build_router(check_session, fetch_cards, get_tenant))
+_vendor_admin, _vendor_partner = vendor.build_router(check_session, get_tenant)
+app.include_router(_vendor_admin)
+app.include_router(teamcal.build_router(check_session))
+app.include_router(_vendor_partner)
+_lists_admin, _lists_partner = prospects.build_router(check_session, fetch_cards, get_tenant)
+app.include_router(_lists_admin)
+app.include_router(_lists_partner)
+_vreq_admin, _vreq_partner = vendorreq.build_router(check_session, vendor.current_vendor, vendor._fire)
+app.include_router(_vreq_admin)
+app.include_router(_vreq_partner)
+app.include_router(digest.build_router(check_session, get_tenant, _sales_router.load_deal, _sales_router.update_in_tx, _sales_router))
 app.include_router(dedupe.build_router(check_session, fetch_cards, image_path_for))
 app.include_router(slack_bot.build_router(slack_bot.SlackHandler(
     fetch_cards=fetch_cards,

@@ -6,7 +6,10 @@
   <meta name="theme-color" content="#2556E8">
   <title>営業管理</title>
   <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/split.css">
   <link rel="stylesheet" href="/sales.css">
+  <link rel="stylesheet" href="/theme.css">
+  <link rel="stylesheet" href="/lists.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -27,7 +30,9 @@
           <div class="top-bar-count" id="dealCount">—</div>
         </div>
       </div>
+      <nav class="app-nav" id="appNav" aria-label="画面の切り替え"></nav>
       <div class="top-bar-right">
+        <select class="me-select" id="meSelect" title="自分（このブラウザで使う人）" style="display:none"></select>
         <a class="btn-ghost" href="/app.html" title="名刺管理へ">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="2" y="5" width="20" height="14" rx="2.5"/><line x1="2" y1="10" x2="22" y2="10"/>
@@ -56,6 +61,8 @@
       </div>
     </header>
 
+    <nav class="pipeline-tabs" id="pipelineTabs" style="display:none"></nav>
+
     <div class="search-wrap">
       <div class="search-field">
         <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -67,7 +74,7 @@
 
     <div class="filter-row" id="stageFilter"></div>
 
-    <main class="main-grid">
+    <main class="main-grid" data-split="30">
       <section class="pane pane-list" id="listPane">
         <div class="skel-list"><div class="skel-row"></div><div class="skel-row"></div><div class="skel-row"></div></div>
       </section>
@@ -82,6 +89,7 @@
         </div>
       </section>
     </main>
+    <section class="view-pane" id="viewPane" style="display:none"></section>
 
     <div class="mobile-sheet" id="mobileSheet">
       <header class="mobile-sheet-head">
@@ -98,7 +106,7 @@
   <div class="dupe-modal-overlay" id="newDealOverlay" style="display:none">
     <div class="dupe-modal" style="max-width:600px">
       <div class="dupe-modal-head">
-        <div class="dupe-modal-title">新規案件</div>
+        <div class="dupe-modal-title" id="newDealTitle">新規案件</div>
         <button class="dupe-modal-close" data-close="newDealOverlay" aria-label="閉じる">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
@@ -109,7 +117,30 @@
           <div id="pickedCard" class="picked-card" style="display:none"></div>
           <input type="search" class="email-input" id="cardSearch" placeholder="会社名・氏名で検索" autocomplete="off">
           <div class="card-results" id="cardResults"></div>
+          <button type="button" class="btn-link nocard-toggle" id="noCardToggle">名刺がない → 会社名・氏名を入力して作る</button>
+          <div class="nocard-fields" id="noCardFields" style="display:none">
+            <div class="sales-grid-2">
+              <input type="text" class="email-input" id="ncCompany" placeholder="会社名" maxlength="120">
+              <input type="text" class="email-input" id="ncContact" placeholder="氏名（わかれば）" maxlength="60">
+            </div>
+            <div class="sales-grid-2">
+              <input type="email" class="email-input" id="ncEmail" placeholder="メール（任意）" maxlength="200">
+              <input type="tel" class="email-input" id="ncPhone" placeholder="電話（任意）" maxlength="40">
+            </div>
+            <div class="card-result-sub">あとで同じ会社・氏名かメールの名刺を登録すると自動でつながります。案件画面の「名刺をつなぐ」からも選べます</div>
+          </div>
         </div>
+        <div class="sales-grid-2 new-next-row">
+          <div class="sales-field">
+            <div class="email-field-label">次のアクション</div>
+            <input type="text" class="email-input" id="newNext" placeholder="例: 御礼メール" maxlength="200">
+          </div>
+          <div class="sales-field">
+            <div class="email-field-label">期限</div>
+            <input type="date" class="email-input" id="newDue">
+          </div>
+        </div>
+        <details class="new-more" id="newMore"><summary>詳しく入力（案件名・段階・接点・担当・受注予定日 など）</summary>
         <div class="sales-field">
           <div class="email-field-label">案件名</div>
           <input type="text" class="email-input" id="newTitle" placeholder="例: 制御盤筐体 10台（空欄なら接点名から自動）" maxlength="120">
@@ -124,21 +155,38 @@
             <select class="email-input" id="newStage"></select>
           </div>
         </div>
+        <div class="sales-field" id="newOwnerWrap">
+          <div class="email-field-label">自社の担当</div>
+          <div id="newOwnerBox"></div>
+        </div>
         <div class="sales-grid-3" id="newEventFields" style="display:none">
           <input type="text" class="email-input" id="newEventName" placeholder="接点名（例: ものづくりワールド大阪）" maxlength="100">
           <input type="date" class="email-input" id="newEventDate">
           <input type="text" class="email-input" id="newEventPlace" placeholder="場所" maxlength="100">
         </div>
-        <div class="sales-grid-2">
-          <div class="sales-field">
-            <div class="email-field-label">次のアクション</div>
-            <input type="text" class="email-input" id="newNext" placeholder="例: 御礼メール" maxlength="200">
+        <div id="newPanelFields" style="display:none">
+          <div class="sales-grid-2">
+            <div class="sales-field"><div class="email-field-label" id="newSegmentLabel">分野</div><div id="newSegmentBox"></div></div>
+            <div class="sales-field"><div class="email-field-label" id="newChannelLabel">商流</div><div id="newChannelBox"></div></div>
           </div>
-          <div class="sales-field">
-            <div class="email-field-label">期限</div>
-            <input type="date" class="email-input" id="newDue">
+          <div class="sales-grid-2" id="newSiteRow">
+            <div class="sales-field"><div class="email-field-label">現場名</div>
+              <input type="text" class="email-input" id="newSite" placeholder="例: 梅田DC 新築工事" maxlength="120"></div>
+            <div class="sales-field"><div class="email-field-label">エンドユーザー</div>
+              <input type="text" class="email-input" id="newEndUser" placeholder="最終的に設備を使う会社・施設" maxlength="120"></div>
+          </div>
+          <div class="sales-grid-2">
+            <div class="sales-field"><div class="email-field-label" id="newDeliveryLabel">納期（任意）</div>
+              <input type="date" class="email-input" id="newDelivery"></div>
           </div>
         </div>
+        <div class="sales-grid-2" id="newCloseWrap">
+          <div class="sales-field">
+            <div class="email-field-label">受注予定日（お客様が決める時期・任意）</div>
+            <input type="date" class="email-input" id="newClose">
+          </div>
+        </div>
+        </details>
       </div>
       <div class="email-modal-footer">
         <div class="email-footer-info">名刺は名刺管理に登録済みのものから選びます</div>
@@ -160,6 +208,20 @@
         </button>
       </div>
       <div class="dupe-modal-body" id="statsBody"></div>
+    </div>
+  </div>
+
+  <!-- リストのモーダル -->
+  <div class="dupe-modal-overlay" id="listsOverlay" style="display:none">
+    <div class="dupe-modal" style="max-width:680px">
+      <div class="dupe-modal-head">
+        <div class="dupe-modal-title" id="listsModalTitle">リスト</div>
+        <button class="dupe-modal-close" data-close="listsOverlay" aria-label="閉じる">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="dupe-modal-body" id="listsModalBody"></div>
+      <div class="email-modal-footer" id="listsModalFoot"></div>
     </div>
   </div>
 
@@ -187,6 +249,26 @@
       </div>
       <div class="dupe-modal-body" id="intakeBody"></div>
       <div class="email-modal-footer" id="intakeFooter"></div>
+    </div>
+  </div>
+
+  <!-- ブループリントへ移すモーダル -->
+  <div class="dupe-modal-overlay" id="moveOverlay" style="display:none">
+    <div class="dupe-modal" style="max-width:640px">
+      <div class="dupe-modal-head">
+        <div class="dupe-modal-title">ブループリントへ移す</div>
+        <button class="dupe-modal-close" data-close="moveOverlay" aria-label="閉じる">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="dupe-modal-body" id="moveBody"></div>
+      <div class="email-modal-footer">
+        <div class="email-footer-info">ステージは右の表示のとおり読み替えます。あとから案件ごとに戻せます</div>
+        <div class="email-footer-actions">
+          <button class="btn-sm" data-close="moveOverlay">キャンセル</button>
+          <button class="btn-sm btn-sm-primary" id="moveApply">移す</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -224,6 +306,19 @@
     </div>
   </div>
 
+  <script src="/sales-icons.js"></script>
+  <script src="/sales-manual.js"></script>
+  <script src="/sales-boss.js"></script>
+  <script src="/sales-board.js"></script>
+  <script src="/sales-team.js"></script>
+  <script src="/sales-panel.js"></script>
+  <script src="/sales-digest.js"></script>
+  <script src="/sales-vendor.js"></script>
+  <script src="/sales-calendar.js"></script>
+  <script src="/sales-lists.js"></script>
+  <script src="/sales-vreq.js"></script>
+  <script src="/sales-today.js"></script>
   <script src="/sales.js"></script>
+  <script src="/split.js"></script>
 </body>
 </html>
