@@ -296,10 +296,15 @@ def parse_report(text: str, deals: list, today: date) -> dict:
 
 
 # ── 処理本体 ──
+_FETCH_CARDS: Optional[Callable] = None
+
+
 class SlackHandler:
     def __init__(self, fetch_cards: Callable, get_tenant: Callable, get_sheets_service: Callable,
                  make_card_id: Callable, clear_cache: Callable, image_path_for: Callable):
         self.fetch_cards = fetch_cards
+        global _FETCH_CARDS
+        _FETCH_CARDS = fetch_cards          # 業者のお知らせで名刺の住所などを引くため
         self.get_tenant = get_tenant
         self.get_sheets_service = get_sheets_service
         self.make_card_id = make_card_id
@@ -767,30 +772,155 @@ def _nolink(v) -> str:
     return re.sub(r"(?i)(https?)://", "\\1:/\u200b/", t).replace("www.", "www\u200b.")
 
 
+MEMO_MAX = 2000   # Slack に載せるメモの上限（長すぎるときは案件の画面で）
+
+
+def _jd(v) -> dict:
+    try:
+        x = json.loads(v or "{}")
+        return x if isinstance(x, dict) else {}
+    except (TypeError, ValueError):
+        return {}
+
+
+def _md(dt: Optional[str]) -> str:
+    """2026-11-09T15:33 → 11/9 15:33"""
+    dt = (dt or "").replace(" ", "T")
+    if len(dt) < 10:
+        return dt
+    out = f"{int(dt[5:7])}/{int(dt[8:10])}"
+    return out + (f" {dt[11:16]}" if len(dt) >= 16 else "")
+
+
+def _quote(text: str) -> str:
+    t = (text or "").strip()
+    if len(t) > MEMO_MAX:
+        t = t[:MEMO_MAX] + "…（続きは案件の画面で）"
+    return "\n".join("> " + (_nolink(x) or " ") for x in t.splitlines())
+
+
+def _card_for(tenant: str, card_id: Optional[str]) -> dict:
+    if not card_id or not _FETCH_CARDS:
+        return {}
+    try:
+        return next((x for x in _FETCH_CARDS(tenant) if x.get("id") == card_id), {}) or {}
+    except Exception:
+        log.exception("お知らせ用の名刺の読み込みに失敗")
+        return {}
+
+
+def vendor_detail_lines(tenant: str, deal_id: Optional[int], kind: Optional[str] = None) -> list:
+    """業者のお知らせに付ける案件の中身（会社・担当者・連絡先・住所・資料の送り先・メモ）"""
+    if not deal_id:
+        return []
+    with sales._conn() as c:
+        d = c.execute("SELECT * FROM deals WHERE id=? AND tenant_id=?", (deal_id, tenant)).fetchone()
+        if not d:
+            return []
+        keys = d.keys()
+        ct = _jd(d["vendor_contact"]) if "vendor_contact" in keys else {}
+        p = None
+        if "prospect_id" in keys and d["prospect_id"]:
+            p = c.execute("SELECT * FROM prospects WHERE id=? AND tenant_id=?", (d["prospect_id"], tenant)).fetchone()
+        req = None
+        try:
+            req = c.execute("""SELECT * FROM vendor_requests WHERE tenant_id=? AND deal_id=? AND status<>'cancelled'
+                ORDER BY updated_at DESC, id DESC LIMIT 1""", (tenant, deal_id)).fetchone()
+        except Exception:
+            pass
+        memo_title, memo = None, None
+        if kind == "request" and req:
+            ev = c.execute("""SELECT result, body FROM vendor_request_events WHERE request_id=? AND actor='vendor'
+                ORDER BY id DESC LIMIT 1""", (req["id"],)).fetchone()
+            if ev:
+                memo = ev["body"]
+        else:
+            a = c.execute("""SELECT title, body FROM activities WHERE tenant_id=? AND deal_id=? AND vendor_id IS NOT NULL
+                ORDER BY id DESC LIMIT 1""", (tenant, deal_id)).fetchone()
+            if a:
+                memo_title, memo = a["title"], a["body"]
+    card = _card_for(tenant, d["card_id"])
+    share = _jd(req["share"]) if req else {}
+    # 資料は送付待ち・到着確認待ちのときだけ出す（終わった依頼は出さない）
+    docs = _jd(req["docs"]) if req and req["kind"] == "docs" and req["status"] in ("requested", "sent") else {}
+    docs_state = "送付待ち" if docs and req["status"] == "requested" else "送付済み・到着確認待ち" if docs else ""
+
+    def first(*vals):
+        return next((str(v).strip() for v in vals if v and str(v).strip()), "")
+
+    dept = first(ct.get("department"), share.get("department"), card.get("department_position"))
+    person = first(ct.get("contact"), share.get("contact"), d["contact_snapshot"], card.get("name"))
+    phone = first(ct.get("phone"), share.get("phone"), d["phone_snapshot"], card.get("mobile"), card.get("phone"),
+                  p["tel"] if p else None)
+    email = first(ct.get("email"), d["email_snapshot"], card.get("email"))
+    address = first(p["address"] if p else None, card.get("address"))
+    zipc = first(p["zip"] if p and "zip" in p.keys() else None)
+    if address and zipc and "〒" not in address:
+        address = f"〒{zipc} {address}"
+    web = first(p["official_url"] if p else None, p["web"] if p else None, card.get("website"))
+    industry = first(p["industry"] if p else None)
+
+    lines = []
+    if dept or person:
+        lines.append(f"*担当* {_nolink(' '.join(x for x in (dept, person) if x))}")
+    if phone or email:
+        lines.append("　".join(x for x in (f"*電話* {_nolink(phone)}" if phone else "",
+                                          f"*メール* {_nolink(email)}" if email else "") if x))
+    lines.append(f"*住所* {_nolink(address)}" if address else "*住所* （未登録）")
+    if industry or web:
+        lines.append("　".join(x for x in (f"*業種* {_nolink(industry)}" if industry else "",
+                                          f"*Web* {slack_esc(web)}" if web else "") if x))
+    st = f"*段階* {slack_esc(d['stage'])}"
+    if d["appo_at"]:
+        st += f"　*アポ* {_md(d['appo_at'])}"
+    if d["next_action"]:
+        st += f"　*次* {slack_esc(d['next_action'])}" + (f"（{_md(d['next_action_due'])}まで）" if d["next_action_due"] else "")
+    lines.append(st)
+    if docs and any(docs.values()):
+        parts = [f"資料: {docs['what']}" if docs.get("what") else "",
+                 f"宛先: {docs['to']}" if docs.get("to") else "",
+                 f"送り方: {docs['method']}" if docs.get("method") else "",
+                 f"送り先: {docs['address']}" if docs.get("address") else ""]
+        lines.append(f"*資料送付（{docs_state}）* " + _nolink("　".join(x for x in parts if x)))
+    if memo:   # 上に出している担当者の行はメモから外す
+        memo = "\n".join(x for x in memo.splitlines() if not x.startswith(("相手: ", "部署・役職: ")))
+    if memo and memo.strip():
+        lines.append("*メモ*" + (f"（{_nolink(memo_title)}）" if memo_title else ""))
+        lines.append(_quote(memo))
+    return lines
+
+
 def on_vendor_event(info: dict):
-    """テレアポ業者が記録したら #営業 にお知らせ"""
+    """テレアポ業者が記録したら #営業 にお知らせ（案件の中身も一通り載せる）"""
     channel = tenant_channel(info["tenant_id"])
     if not channel or not token_for_channel(channel):
         return
     if info.get("kind") == "list":
         text = (f":clipboard: *テレアポ業者がリストを共有しました*（{slack_esc(info.get('vendor'))}）\n"
                 f"<{app_url()}/sales.html?view=lists|{_nolink(info.get('company'))}>｜{_nolink(info.get('title'))}")
-        import threading
-        threading.Thread(target=lambda: post(channel, None, text), daemon=True).start()
-        return
-    if info.get("kind") == "request":
+    elif info.get("kind") == "request":
         text = (f":telephone_receiver: *テレアポ業者から: {slack_esc(info.get('what'))}*（{slack_esc(info.get('vendor'))}）\n"
                 f"<{app_url()}/sales.html?deal={info['deal_id']}|#{info['deal_id']} {_nolink(info.get('company'))}>｜{_nolink(info.get('detail'))}")
-        import threading
-        threading.Thread(target=lambda: post(channel, None, text), daemon=True).start()
-        return
-    ap = info.get("appo_at") or ""
-    appo = f" ／ アポ {int(ap[5:7])}/{int(ap[8:10])}{(' ' + ap[11:16]) if len(ap) >= 16 else ''}" if len(ap) >= 10 else ""
-    head = ":telephone_receiver: *テレアポ業者から新しい記録*" if info.get("new") else ":telephone_receiver: テレアポ業者が記録を追加"
-    text = (f"{head}（{slack_esc(info.get('vendor'))}）\n<{app_url()}/sales.html?deal={info['deal_id']}|#{info['deal_id']} "
-            f"{_nolink(info.get('company'))}>｜{_nolink(info.get('title'))}{appo}")
+    else:
+        ap = info.get("appo_at") or ""
+        appo = f" ／ アポ {int(ap[5:7])}/{int(ap[8:10])}{(' ' + ap[11:16]) if len(ap) >= 16 else ''}" if len(ap) >= 10 else ""
+        head = ":telephone_receiver: *テレアポ業者から新しい記録*" if info.get("new") else ":telephone_receiver: テレアポ業者が記録を追加"
+        text = (f"{head}（{slack_esc(info.get('vendor'))}）\n<{app_url()}/sales.html?deal={info['deal_id']}|#{info['deal_id']} "
+                f"{_nolink(info.get('company'))}>｜{_nolink(info.get('title'))}{appo}")
+
+    def send():
+        body = text
+        if info.get("kind") != "list":
+            try:
+                extra = vendor_detail_lines(info["tenant_id"], info.get("deal_id"), info.get("kind"))
+                if extra:
+                    body = text + "\n" + "\n".join(extra)
+            except Exception:
+                log.exception("お知らせの詳細の作成に失敗（見出しだけ送ります）")
+        post(channel, None, body)
+
     import threading
-    threading.Thread(target=lambda: post(channel, None, text), daemon=True).start()
+    threading.Thread(target=send, daemon=True).start()
 
 
 try:
