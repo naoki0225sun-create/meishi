@@ -364,6 +364,7 @@ function drawTable() {
     tr.onclick = e => { if (e.target.closest('.lt-chk')) return; openProspect(Number(tr.dataset.pid)); };
     tr.onkeydown = e => { if (e.key === 'Enter') openProspect(Number(tr.dataset.pid)); };
   });
+  bindStatusDrag();
   drawBulk();
 }
 
@@ -373,15 +374,62 @@ function drawBulk() {
   if (!n) { el.innerHTML = ''; el.classList.remove('is-on'); return; }
   el.classList.add('is-on');
   el.innerHTML = `<b>${n}社を選択中</b>
+    <span class="lst-bulk-l">状況を変える</span>${LSTATUS.map(([k, l]) => `<button class="btn-sm bs-${k}" data-bs="${k}">${l}</button>`).join('')}
+    <span class="lst-bulk-sep"></span>
     <button class="btn-sm" data-bd="1">完了にする</button><button class="btn-sm" data-bd="0">完了を外す</button>
     <span class="lst-bulk-sep"></span>
-    <button class="btn-sm" data-bv="ok">○ かけてよい</button><button class="btn-sm" data-bv="hold">△ 保留</button><button class="btn-sm" data-bv="ng">× かけない</button>
+    <button class="btn-sm" data-bv="ok">○ かけてよい</button>
     ${LS.ai ? '<button class="btn-sm" id="lsBulkAi">AIで調べる</button>' : ''}
     <button class="link-btn" id="lsBulkClear">選択をやめる</button>`;
   el.querySelectorAll('[data-bv]').forEach(b => b.onclick = () => bulkVerdict(b.dataset.bv));
   el.querySelectorAll('[data-bd]').forEach(b => b.onclick = () => bulkDone(b.dataset.bd === '1'));
+  el.querySelectorAll('[data-bs]').forEach(b => b.onclick = () => setStatus([...LS.checked], b.dataset.bs));
   if ($('lsBulkAi')) $('lsBulkAi').onclick = () => queueResearch({ ids: [...LS.checked] });
   $('lsBulkClear').onclick = () => { LS.checked.clear(); drawTable(); };
+}
+
+// 状況を動かす（まとめて・ドラッグ・会社の画面）。元に戻すつき
+async function setStatus(ids, status) {
+  ids = ids.filter(id => { const r = LS.rows.find(x => x.id === id); return r && r.status !== status; });
+  if (!ids.length) { showToast(`もう「${LSTATUS_LABEL[status]}」です`, { type: 'info', duration: 1500 }); return; }
+  try {
+    const r = await api('/api/sales/prospects/status', { method: 'POST', body: JSON.stringify({ ids, status }) });
+    LS.checked.clear();
+    await openList(LS.cur.id, true);
+    showToast(`${r.updated}社を「${LSTATUS_LABEL[status]}」にしました`, { type: 'success', duration: 6000,
+      action: { label: '元に戻す', onClick: async () => {
+        try { await api('/api/sales/prospects/status', { method: 'POST', body: JSON.stringify({ restore: r.before }) }); await openList(LS.cur.id, true); showToast('元に戻しました', { type: 'success', duration: 1500 }); }
+        catch (e) { showToast(e.message, { type: 'error' }); }
+      } } });
+  } catch (e) { showToast(e.message, { type: 'error', title: '状況を変えられませんでした' }); }
+}
+
+// 行 → 上の状況タイルへドラッグ（チェックした会社はまとめて）
+let lsDragId = null;
+function bindStatusDrag() {
+  $('lsTable').querySelectorAll('.lt-row[data-pid]').forEach(tr => {
+    tr.draggable = true;
+    tr.ondragstart = e => {
+      lsDragId = Number(tr.dataset.pid);
+      tr.classList.add('is-dragging'); $('lstWrap').classList.add('is-dragging-row');
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', String(lsDragId)); } catch { /* 一部ブラウザ */ }
+      if (typeof dragLabel === 'function') dragLabel(e, LS.checked.has(lsDragId) ? LS.checked.size : 1);
+    };
+    tr.ondragend = () => { tr.classList.remove('is-dragging'); $('lstWrap').classList.remove('is-dragging-row'); lsDragId = null;
+      $('lsTiles').querySelectorAll('.is-drop').forEach(t => t.classList.remove('is-drop')); };
+  });
+  $('lsTiles').querySelectorAll('[data-lf]').forEach(t => {
+    if (t.dataset.lf === 'all') return;
+    t.ondragover = e => { if (lsDragId == null) return; e.preventDefault(); t.classList.add('is-drop'); };
+    t.ondragleave = () => t.classList.remove('is-drop');
+    t.ondrop = e => {
+      e.preventDefault(); t.classList.remove('is-drop');
+      const id = lsDragId || Number(e.dataTransfer.getData('text/plain'));
+      if (!id) return;
+      setStatus(LS.checked.has(id) && LS.checked.size > 1 ? [...LS.checked] : [id], t.dataset.lf);
+    };
+  });
 }
 
 async function bulkDone(done) {
@@ -541,7 +589,8 @@ function drawDrawer() {
     <div class="pd-head"><button class="link-btn pd-close" id="pdClose">← 一覧に戻る</button>
       <h3>${esc(p.company)}</h3>
       <div class="pd-sub">${esc([p.industry, p.address].filter(Boolean).join('・'))}</div>
-      <div class="pd-state">${row.status ? statusHtml(row) : ''}
+      <div class="pd-state">
+        <div class="pd-stsel" role="group" aria-label="状況">${LSTATUS.map(([k, l]) => `<button class="st-pill st-${k} ${row.status === k ? 'is-on' : ''}" data-pst="${k}" aria-pressed="${row.status === k ? 'true' : 'false'}">${l}</button>`).join('')}</div>
         <button class="pd-done ${p.done ? 'is-on' : ''}" id="pdDone" aria-pressed="${p.done ? 'true' : 'false'}">${ico('check', 13)} ${p.done ? '完了（押すと戻す）' : '完了にする'}</button></div>
       <div class="pd-links">${p.tel ? `<a class="btn-sm" href="tel:${esc(p.tel.replace(/[^\d+]/g, ''))}">${ico('phone')} ${esc(p.tel)}</a>` : ''}
         ${web ? `<a class="btn-sm" href="${esc(web)}" target="_blank" rel="noopener noreferrer">公式サイト ↗</a>` : '<span class="lst-muted">公式サイト不明</span>'}
@@ -569,6 +618,7 @@ function drawDrawer() {
     <section class="pd-sec"><div class="pd-sec-t">AIの調査</div><div id="pdAi">${aiHtml(p)}</div></section>
     ${p.lists.length > 1 ? `<section class="pd-sec"><div class="pd-sec-t">載っているリスト</div>${p.lists.map(l => `<div class="pd-list">${esc(l.name)}${l.memo ? `<span class="lst-muted">${esc(l.memo.slice(0, 60))}</span>` : ''}</div>`).join('')}</section>` : ''}`;
   $('pdDone').onclick = () => setDone(p.id, !p.done);
+  $('lsDrawer').querySelectorAll('[data-pst]').forEach(b => b.onclick = () => setStatus([p.id], b.dataset.pst));
   $('pdClose').onclick = () => { LS.sel = null; LS.detail = null; $('lstWrap').classList.remove('has-sel'); el.innerHTML = ''; drawTable();
     if (isMobile()) window.scrollTo(0, LS.listScroll || 0); };
   el.querySelectorAll('[data-deal]').forEach(b => b.onclick = e => { e.preventDefault(); showDeal(Number(b.dataset.deal)); });

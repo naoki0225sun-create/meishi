@@ -5,6 +5,7 @@
 // ============================================================
 
 const S = {
+  bulk: new Set(),     // まとめて動かす案件（sales-bulk.js）
   meta: null,
   settings: { reply_wait_days: 3, stale_days: 14 },
   deals: [],           // 表示中の種類（営業／ブループリント）の案件
@@ -186,6 +187,7 @@ function setPipeline(key) {
 
 function setView(v) {
   S.view = v;
+  if (typeof drawBulkBar === 'function') drawBulkBar();
   const deals = v === 'deals';
   document.querySelector('.search-wrap').style.display = deals ? '' : 'none';
   $('stageFilter').style.display = deals ? '' : 'none';
@@ -322,6 +324,7 @@ function renderFilters() {
   $('stageFilter').querySelectorAll('[data-filter]').forEach(b => b.onclick = () => {
     S.filter = b.dataset.filter; renderFilters(); renderList();
   });
+  bindChipDrop();
   $('dealCount').textContent = `進行中 ${open.length}件 / 全 ${S.deals.length}件` + (action.length ? ` / 要対応 ${action.length}件` : '');
 }
 document.addEventListener('click', () => { if (S.filterOpen) { S.filterOpen = false; if ($('filterPop')) $('filterPop').hidden = true; if ($('filterBtn')) $('filterBtn').setAttribute('aria-expanded', 'false'); } });
@@ -455,12 +458,13 @@ function renderList() {
         due = `<span>→ ${esc(d.next_action)}</span>`;
       }
       return `
-        <div class="deal-row ${d.id === S.selectedId ? 'row-active' : ''} ${vqIsNew(d) ? 'is-vq-new' : ''} ${idleClass(d)}" data-id="${d.id}" ${idleClass(d) ? `title="${idleDays(d)}日 動きがありません"` : ''}>
+        <div class="deal-row ${d.id === S.selectedId ? 'row-active' : ''} ${S.bulk.has(d.id) ? 'is-picked' : ''} ${vqIsNew(d) ? 'is-vq-new' : ''} ${idleClass(d)}" data-id="${d.id}" ${idleClass(d) ? `title="${idleDays(d)}日 動きがありません"` : ''}>
           <div class="deal-row-top">
+            ${pickBoxHtml(d)}
             <div class="deal-company">${esc(company)}${person ? ` <span style="font-weight:400;color:var(--text-secondary)">${esc(person)}</span>` : ''}</div>
             <span class="stage-badge" data-stage="${esc(d.stage)}">${esc(d.stage)}</span>
           </div>
-          <div class="deal-title"><span class="deal-no">#${d.id}</span> ${esc(d.title)}${d.amount != null ? `<span class="deal-amt">${yen(d.amount)}</span>` : ''}</div>
+          <div class="deal-title"><span class="deal-no">#${d.id}</span><span class="deal-tt">${esc(d.title)}</span>${d.amount != null ? `<span class="deal-amt">${yen(d.amount)}</span>` : ''}</div>
           ${routeHtml(d)}
           ${alertLine(d) || bossLine(d)}
           <div class="deal-meta">
@@ -478,7 +482,9 @@ function renderList() {
         </div>`;
     }).join('');
     $('listPane').querySelectorAll('.deal-row').forEach(el => el.onclick = () => selectDeal(Number(el.dataset.id)));
+    bindPicks($('listPane')); bindRowDrag($('listPane'));
   }
+  drawBulkBar();
   if ($('bannerBtn')) $('bannerBtn').onclick = () => { S.filter = 'action'; renderFilters(); renderList(); };
 }
 
@@ -609,9 +615,9 @@ function renderDetail() {
     return `<button class="stage-step ${cls} ${side}" data-stage="${esc(s)}">${esc(s)}</button>`;
   }).join('');
 
-  const lostBox = pl.reason_required && (S.showLostBox || d.stage === pl.lost) ? `
-    <div class="lost-box">
-      <div class="lost-box-title">${d.stage === '失注' ? '失注理由' : '失注にする理由を選んでください'}</div>
+  const lostBox = pl.reason_required && d.stage === pl.lost ? `
+    <details class="lost-box" ${S.showLostBox || !d.lost_reason ? 'open' : ''}>
+      <summary class="lost-box-title">失注の理由${d.lost_reason ? `：${esc(d.lost_reason)}` : '（任意・あとからでも書けます）'}</summary>
       <select class="email-input compact" id="lostReason">
         <option value="">— 選択 —</option>
         ${S.meta.lost_reasons.map(r => `<option ${d.lost_reason === r ? 'selected' : ''}>${esc(r)}</option>`).join('')}
@@ -621,10 +627,9 @@ function renderDetail() {
         ${Object.entries(S.meta.lost_types).map(([k, v]) => `<label><input type="radio" name="lostType" value="${k}" ${d.lost_type === k ? 'checked' : ''}> ${esc(v)}</label>`).join('')}
       </div>
       <div style="display:flex;gap:6px;justify-content:flex-end">
-        ${d.stage !== '失注' ? '<button class="btn-sm" id="lostCancel">やめる</button>' : ''}
-        <button class="btn-sm btn-sm-primary" id="lostSave">${d.stage === '失注' ? '理由を更新' : '失注にする'}</button>
+        <button class="btn-sm btn-sm-primary" id="lostSave">理由を残す</button>
       </div>
-    </div>` : '';
+    </details>` : '';
 
   const eventOpts = `<option value="">— なし —</option>` + S.events.map(e =>
     `<option value="${e.id}" ${d.event_id === e.id ? 'selected' : ''}>${esc(e.name)}${e.event_date ? ` (${fmtDate(e.event_date)})` : ''}</option>`).join('');
@@ -681,6 +686,7 @@ function renderDetail() {
     ['record', '記録', userActs ? String(userActs) : ''],
     mailBlock ? ['mail', 'メール', ''] : null,
     itemsBlock ? ['items', isPanel() ? '見積明細' : '見積', (d.items || []).length ? String(d.items.length) : ''] : null,
+    ['docs', '書類', ''],
   ].filter(Boolean);
   if (!tabs.some(t => t[0] === S.dtab)) S.dtab = 'overview';
   const tabHtml = tabs.map(([k, label, n, cls]) => `<button class="dtab ${k === S.dtab ? 'is-active' : ''} ${cls || ''}" data-dtab="${k}">${esc(label)}${n ? `<span class="dtab-n">${esc(n)}</span>` : ''}</button>`).join('');
@@ -737,7 +743,6 @@ function renderDetail() {
               <div class="k">登録日</div>
               <div class="v" style="font-size:13px;color:var(--text-secondary)">${esc(fmtDateTime(d.created_at))}${d.closed_at ? ` ／ 完了 ${esc(fmtDateTime(d.closed_at))}` : ''}</div>
             </div></details>
-            </div>
           </div>
           <div class="ov-side">
             ${bossDealHtml(d)}
@@ -773,9 +778,11 @@ function renderDetail() {
 
       ${mailBlock ? pane('mail', mailBlock) : ''}
       ${itemsBlock ? pane('items', itemsBlock) : ''}
+      ${pane('docs', '<div class="detail-section" id="dealDocs"><div class="empty-text">読み込み中…</div></div>')}
     </div>`;
 
   bindDetail();
+  if (typeof loadDealDocs === 'function') loadDealDocs(d.id);
 }
 
 // 詳細のタブ（再描画せずに切り替える）
@@ -837,15 +844,13 @@ function bindDetail() {
   root.querySelectorAll('.stage-step').forEach(b => b.onclick = () => {
     const s = b.dataset.stage;
     if (s === d.stage) return;
-    if (s === pipeOf(d).lost && pipeOf(d).reason_required) { S.showLostBox = true; renderDetail(); return; }
     moveStage(d.id, s);
   });
   if (q('#lostCancel')) q('#lostCancel').onclick = () => { S.showLostBox = false; renderDetail(); };
   if (q('#lostSave')) q('#lostSave').onclick = () => {
     const reason = q('#lostReason').value;
-    if (!reason) { showToast('失注理由を選んでください', { type: 'warning' }); return; }
     const lt = (root.querySelector('input[name="lostType"]:checked') || {}).value || null;
-    const data = { lost_reason: reason, lost_detail: q('#lostDetail').value };
+    const data = { lost_reason: reason || null, lost_detail: q('#lostDetail').value };
     if (d.stage !== '失注') data.stage = '失注';
     if (lt) data.lost_type = lt;
     patchDeal(data, true);
@@ -1079,7 +1084,7 @@ function cardPanelHtml(d, company, person, contact) {
           ${contact ? `<div class="deal-sub field-value">${contact}</div>` : ''}
           ${websiteHtml(card)}
           <div class="card-actions">
-            <a class="btn-link" href="/app.html" target="_blank" rel="noopener">名刺管理で見る</a>
+            <a class="btn-link" href="/app.html?card=${encodeURIComponent(card.id)}" target="_blank" rel="noopener">名刺管理で見る</a>
             <button class="btn-link" id="relinkBtn">${S.linking ? '付け替えをやめる' : '名刺を付け替える'}</button>
           </div>
         </div>

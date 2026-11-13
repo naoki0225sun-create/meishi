@@ -171,6 +171,7 @@ function drawBoss() {
         </div>` : ''}
       </div>
 
+      ${isSales && !BOSS.owner ? '<div id="bossNumbers"></div>' : ''}
       <div class="stat-tiles boss-tiles">${tiles.map(([k, v, c]) => `
         <div class="stat-tile ${c ? 'tile-' + c : ''}"><div class="stat-tile-label">${esc(k)}</div><div class="stat-tile-value">${esc(v)}</div></div>`).join('')}
       </div>
@@ -247,6 +248,7 @@ function drawBoss() {
     try { await api('/api/sales/advisor/team/ai', { method: 'POST' }); await renderBoss(); }
     catch (e) { showToast(e.message, { type: 'error', title: 'AIに失敗' }); btn.disabled = false; btn.textContent = '今週動く3件をAIに聞く'; }
   };
+  if (typeof fillBossNumbers === 'function') fillBossNumbers();
 }
 
 // 「#12」を案件へのリンクに

@@ -844,3 +844,9 @@ body.board-mode .split-handle { display: none; }
 .mm-appo .mm-next-row input { flex: 0 0 auto; width: auto; min-width: 0; }
 .mm-use { white-space: nowrap; }
 .mm-use.mm-use-l { white-space: normal; }
+
+/* 進行ボードのカード：図面の縮小画像（phase30） */
+.bc-thumb { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 4px; border: 1px solid var(--border, #E4E7EC); border-radius: 8px; background: #fff; text-decoration: none; color: var(--text-secondary, #475467); font-size: 11px; }
+.bc-thumb img { width: 56px; height: 40px; object-fit: contain; background: #fff; border-radius: 4px; flex: none; }
+.bc-thumb span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.bc-thumb:hover { border-color: var(--blue-300, #A4BCFD); }

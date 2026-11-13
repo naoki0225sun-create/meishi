@@ -194,6 +194,12 @@ async function init() {
   }
   renderSortSelect();
   await Promise.all([loadCards(), loadTags(), loadDupesCount()]);
+  // 図面タブ・営業から名刺を開く（/app.html?card=ID）
+  const want = new URLSearchParams(location.search).get('card');
+  if (want) {
+    history.replaceState(null, '', '/app.html');
+    if (state.allCards.some(c => String(c.id) === want)) selectCard(state.allCards.find(c => String(c.id) === want).id);
+  }
 }
 
 async function loadDupesCount() {
@@ -215,6 +221,7 @@ async function loadDupesCount() {
 // Data loading
 // ============================================================
 async function loadCards(keepSelection = true) {
+  if (ZUMEN_COUNTS === null) loadZumenCounts();
   try {
     const params = new URLSearchParams();
     if (state.searchQuery) params.set('q', state.searchQuery);
@@ -416,6 +423,23 @@ function kanaRow(c) {
   return row ? `${row[0]}行` : 'その他';
 }
 
+// 図面タブの件数（会社の見出しに「図面 12・注文 5」を出し、会社フォルダへ飛べるようにする）
+let ZUMEN_COUNTS = null;
+function loadZumenCounts() {
+  fetch('/api/zumen/card-counts', { credentials: 'include' }).then(r => r.ok ? r.json() : null).then(d => {
+    if (!d) return;
+    ZUMEN_COUNTS = d.by_name || {};
+    if (Object.keys(ZUMEN_COUNTS).length) renderList();
+  }).catch(() => {});
+}
+function zumenBadge(group) {
+  if (!ZUMEN_COUNTS) return '';
+  const v = ZUMEN_COUNTS[group.company] || group.cards.map(c => ZUMEN_COUNTS[c.company]).find(Boolean);
+  if (!v) return '';
+  const t = [v.drawings ? `図面 ${v.drawings}` : '', v.orders ? `注文 ${v.orders}` : ''].filter(Boolean).join('・') || `書類 ${v.docs}`;
+  return `<a class="company-zumen" href="/zumen.html?company=${v.company_id}" title="図面タブの会社フォルダを開く" onclick="event.stopPropagation()">${escapeHtml(t)}</a>`;
+}
+
 function listSectionsHtml(groups, q) {
   const sort = state.sort || 'company';
   const groupHtml = group => {
@@ -424,7 +448,7 @@ function listSectionsHtml(groups, q) {
       <div class="company-group-head">
         <div class="company-dot" style="background:${color.fg}"></div>
         <div class="company-name">${highlight(group.company, q)}</div>
-        <div class="company-count">${group.cards.length}名</div>
+        ${zumenBadge(group)}<div class="company-count">${group.cards.length}名</div>
       </div>${group.cards.map(c => rowHtml(c, q, color)).join('')}</div>`;
   };
   if (sort === 'company' || sort === 'company_size') {

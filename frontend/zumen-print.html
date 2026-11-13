@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>印刷</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --ink: #172033; --ink-2: #4B5870; --line: #D9DEE6; --red: #D42828; --green: #18804A; --brand: #2556E8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Noto Sans JP", system-ui, sans-serif; color: var(--ink); background: #EEF1F5; }
+    .bar { position: sticky; top: 0; display: flex; gap: 10px; align-items: center; padding: 10px 16px; background: #fff; border-bottom: 1px solid var(--line); font-size: 13px; z-index: 5; }
+    .bar button { font: inherit; padding: 8px 16px; border-radius: 9px; border: 1px solid var(--line); background: #fff; cursor: pointer; }
+    .bar button.primary { background: var(--brand); color: #fff; border-color: var(--brand); font-weight: 600; }
+    .bar label { display: flex; gap: 4px; align-items: center; color: var(--ink-2); }
+    .sheet { background: #fff; margin: 16px auto; box-shadow: 0 2px 14px rgba(16,24,40,.12); padding: 10mm; }
+    .sheet.land { width: 297mm; min-height: 210mm; }
+    .sheet.port { width: 210mm; min-height: 297mm; }
+    .hd { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; border-bottom: 2px solid var(--ink); padding-bottom: 4mm; margin-bottom: 4mm; }
+    .hd h1 { font-size: 18pt; margin: 0; }
+    .hd .sub { font-size: 9.5pt; color: var(--ink-2); margin-top: 2px; }
+    .rev { font-size: 14pt; font-weight: 700; color: var(--green); border: 2px solid var(--green); border-radius: 6px; padding: 1mm 4mm; white-space: nowrap; }
+    .qr { text-align: center; font-size: 7.5pt; color: var(--ink-2); }
+    .qr img { width: 26mm; height: 26mm; display: block; margin: 0 auto 1mm; }
+    .fig { position: relative; }
+    .fig img { width: 100%; display: block; }
+    .fig svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .ft { display: flex; justify-content: space-between; font-size: 8pt; color: var(--ink-2); margin-top: 3mm; border-top: 1px solid var(--line); padding-top: 2mm; }
+    table { width: 100%; border-collapse: collapse; font-size: 10pt; margin: 3mm 0; }
+    th, td { border: 1px solid #B9C1CD; padding: 1.6mm 2mm; text-align: left; vertical-align: top; }
+    th { background: #F2F4F7; font-weight: 600; font-size: 9pt; }
+    td.num { text-align: right; }
+    .kv { display: grid; grid-template-columns: 26mm 1fr 26mm 1fr; border: 1px solid #B9C1CD; font-size: 10.5pt; }
+    .kv > div { padding: 1.8mm 2mm; border-bottom: 1px solid #DDE2E9; }
+    .kv .k { background: #F2F4F7; font-size: 9pt; color: var(--ink-2); }
+    .due { font-size: 16pt; font-weight: 700; }
+    .sec { font-size: 11pt; font-weight: 700; margin: 5mm 0 1mm; border-left: 4px solid var(--ink); padding-left: 2mm; }
+    .dws { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm; }
+    .dw { border: 1px solid #B9C1CD; border-radius: 2mm; overflow: hidden; break-inside: avoid; }
+    .dw img.th { width: 100%; height: 38mm; object-fit: contain; display: block; border-bottom: 1px solid #DDE2E9; }
+    .dw .info { padding: 1.5mm 2mm; font-size: 9pt; display: grid; grid-template-columns: 1fr auto; gap: 1mm; align-items: center; }
+    .dw .info b { font-size: 10.5pt; }
+    .dw .qrs { width: 15mm; height: 15mm; }
+    .flag { color: var(--red); font-weight: 700; font-size: 9pt; }
+    .note { font-size: 9pt; padding: 1mm 2mm; color: var(--ink-2); }
+    .note.bad { color: var(--red); }
+    .check { width: 6mm; height: 6mm; border: 1.5px solid var(--ink); display: inline-block; vertical-align: middle; }
+    .sign { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid #B9C1CD; margin-top: 5mm; font-size: 9pt; }
+    .sign div { border-right: 1px solid #B9C1CD; padding: 1.5mm 2mm 12mm; }
+    .sign div:last-child { border-right: none; }
+    .err { margin: 40px; color: var(--red); }
+    @media print {
+      body { background: #fff; }
+      .bar { display: none; }
+      .sheet { margin: 0; box-shadow: none; padding: 0; width: auto !important; min-height: 0 !important; zoom: 1 !important; }
+      .hide-marks svg.marks { display: none; }
+    }
+  </style>
+  <style id="pageSize">@page { size: A4 landscape; margin: 8mm; }</style>
+</head>
+<body>
+  <div class="bar"><b id="barTitle">印刷</b>
+    <label id="optMarks" style="display:none"><input type="checkbox" id="chkMarks" checked> 書き込みも印刷</label>
+    <span style="flex:1"></span><button onclick="history.length > 1 ? history.back() : window.close()">戻る</button><button class="primary" onclick="window.print()">印刷する</button></div>
+  <div id="root"></div>
+  <script src="/sales-icons.js"></script>
+  <script src="/zumen-viewer.js"></script>
+  <script>
+    const $ = id => document.getElementById(id);
+    const esc = s => s == null ? '' : String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const md = s => { if (!s) return ''; const [y, m, d] = s.slice(0, 10).split('-'); return `${y}年${Number(m)}月${Number(d)}日`; };
+    const now = () => { const d = new Date(); return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; };
+    const me = (() => { try { return localStorage.getItem('sales.me') || ''; } catch { return ''; } })();
+    async function api(p) { const r = await fetch(p, { credentials: 'include' }); if (r.status === 401) { location.href = '/'; throw new Error(); } if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.status); return r.json(); }
+    const qrUrl = path => `/api/zumen/qr?u=${encodeURIComponent(path)}`;
+    const waitImgs = () => Promise.all([...document.images].map(i => i.complete ? 1 : new Promise(r => { i.onload = i.onerror = r; })));
+    const p = new URLSearchParams(location.search);
+
+    async function printDrawing(id) {
+      const [d, me_] = await Promise.all([api(`/api/zumen/drawings/${id}`), api('/api/me').catch(() => ({ tenant: {} }))]);
+      const cur = d.current, dw = d.drawing;
+      if (!cur) { $('root').innerHTML = '<div class="err">この図番には図面の版がありません</div>'; return; }
+      const marks = (await api(`/api/zumen/files/${cur.file_id}/marks?page=${cur.page_no || 1}`)).marks;
+      document.title = `${dw.drawing_no} ${cur.rev || '初版'}`;
+      $('barTitle').textContent = `図面の印刷　${dw.drawing_no}（${cur.rev || '初版'}）`;
+      if (marks.length) $('optMarks').style.display = '';
+      const qr = `/zumen.html?drawing=${id}&rev=${cur.id}`;
+      $('root').innerHTML = `<div class="sheet land" id="sheet">
+        <div class="hd"><div><h1>${esc(dw.drawing_no)}　${esc(dw.name || '')}</h1>
+          <div class="sub">${esc(dw.company)}　${esc([dw.material, dw.thickness ? 't' + dw.thickness : '', dw.surface].filter(Boolean).join(' / '))}</div></div>
+          <div style="display:flex;gap:6mm;align-items:center"><div class="rev">${esc(cur.rev || '初版')}（印刷時点の最新版）</div>
+          <div class="qr"><img src="${qrUrl(qr)}" alt="">スマホで読み取ると最新版が開きます<br>古い版なら赤く表示されます</div></div></div>
+        <div class="fig"><img id="figImg" src="/api/zumen/files/${cur.file_id}/page/${cur.page_no || 1}?size=hi"><svg class="marks" id="figMarks"></svg></div>
+        <div class="ft"><span>${esc(me_.tenant.display_name || '')}　図面管理から印刷　${now()}${me ? `　${esc(me)}` : ''}</span><span>版は必ずQRコードで確認してください。この紙をコピーして使わないでください</span></div>
+      </div>`;
+      const img = $('figImg');
+      img.onload = () => { const s = $('figMarks'); s.setAttribute('viewBox', `0 0 ${img.naturalWidth} ${img.naturalHeight}`); s.innerHTML = zvMarksSvg(marks, img.naturalWidth, img.naturalHeight); };
+      $('chkMarks').onchange = e => document.body.classList.toggle('hide-marks', !e.target.checked);
+      await waitImgs();
+      if (img.naturalHeight > img.naturalWidth) { $('sheet').className = 'sheet port'; $('pageSize').textContent = '@page { size: A4 portrait; margin: 8mm; }'; }
+      if (p.get('auto') === '1') setTimeout(() => window.print(), 300);
+    }
+
+    async function printInstruction(id) {
+      const d = await api(`/api/zumen/deals/${id}/instruction`);
+      document.title = `製作指示書 ${d.company || ''} ${d.deal.title}`;
+      $('barTitle').textContent = '製作指示書';
+      $('pageSize').textContent = '@page { size: A4 portrait; margin: 10mm; }';
+      $('root').innerHTML = `<div class="sheet port">
+        <div class="hd"><div><h1>製作指示書</h1><div class="sub">${esc(d.own)}　案件 #${d.deal.id}　印刷 ${now()}${me ? `　${esc(me)}` : ''}</div></div>
+          <div class="qr"><img src="${qrUrl(`/zumen.html?view=site&deal=${id}`)}" alt="">現場の画面を開く</div></div>
+        <div class="kv">
+          <div class="k">お客様</div><div><b>${esc(d.company || '')}</b></div><div class="k">納期</div><div class="due">${esc(md(d.due) || '未定')}</div>
+          <div class="k">件名</div><div>${esc(d.deal.title)}</div><div class="k">注文番号</div><div>${esc(d.order_nos.join('、') || '—')}</div>
+          ${d.deal.site_name ? `<div class="k">現場</div><div>${esc(d.deal.site_name)}</div>` : ''}<div class="k">担当</div><div>${esc(d.deal.owner || '')}</div>
+        </div>
+        <div class="sec">製作するもの</div>
+        <table><thead><tr><th>図番</th><th>版</th><th>品名</th><th>材質</th><th>板厚</th><th class="num">数量</th><th>納期</th><th>済</th></tr></thead><tbody>
+          ${d.lines.map(l => `<tr><td>${esc(l.drawing_no || '')}</td><td>${esc(l.rev || '')}</td><td>${esc(l.name || '')}</td><td>${esc(l.material || '')}</td><td>${esc(l.thickness || '')}</td>
+            <td class="num"><b>${l.qty ?? ''}</b></td><td>${esc(l.due_on ? md(l.due_on) : '')}</td><td><span class="check"></span></td></tr>`).join('') || '<tr><td colspan="8">注文書の明細がありません</td></tr>'}</tbody></table>
+        ${d.milestones.length ? `<div class="sec">工程の予定（納期から逆算）</div><table><thead><tr>${d.milestones.map(m => `<th>${esc(m.label)}</th>`).join('')}</tr></thead>
+          <tbody><tr>${d.milestones.map(m => `<td>${esc(md(m.plan))}${m.done ? '<br><b>済</b>' : ''}</td>`).join('')}</tr></tbody></table>` : ''}
+        <div class="sec">図面（印刷時点の最新版。版はQRコードで確認してください）</div>
+        <div class="dws">${d.drawings.map(w => `<div class="dw">${w.file_id ? `<img class="th" src="/api/zumen/files/${w.file_id}/page/${w.page_no || 1}?size=view">` : '<div style="height:38mm"></div>'}
+          <div class="info"><div><b>${esc(w.drawing_no)}</b>　版 <b>${esc(w.rev || '初版')}</b><br>${esc(w.name || '')} ${esc([w.material, w.thickness ? 't' + w.thickness : ''].filter(Boolean).join(' '))}
+            ${w.rev_mismatch ? `<div class="flag">注文書は${esc(w.ordered_rev)}版です。最新版と異なるため、事務所に確認してください</div>` : ''}</div>
+            ${w.rev_id ? `<img class="qrs" src="${qrUrl(`/zumen.html?drawing=${w.id}&rev=${w.rev_id}`)}">` : ''}</div>
+          ${w.notes.map(n => `<div class="note ${n.kind === '不具合' ? 'bad' : ''}">【${esc(n.kind)}】${esc(n.body)}</div>`).join('')}</div>`).join('') || '<div>図面がまだ紐づいていません</div>'}</div>
+        <div class="sign"><div>指示</div><div>加工</div><div>検査</div><div>出荷</div></div>
+      </div>`;
+      await waitImgs();
+      if (p.get('auto') === '1') setTimeout(() => window.print(), 300);
+    }
+
+    (async () => {
+      try {
+        if (p.get('drawing')) await printDrawing(Number(p.get('drawing')));
+        else if (p.get('deal')) await printInstruction(Number(p.get('deal')));
+        else $('root').innerHTML = '<div class="err">印刷するものが指定されていません</div>';
+      } catch (e) { $('root').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+    })();
+  </script>
+<script>
+// 狭い画面（タブレットの縦・スマホ）では、紙の見た目のまま画面の幅に縮めて見せる（印刷には効かない）
+(function () {
+  const fit = () => document.querySelectorAll('.sheet').forEach(sh => {
+    sh.style.zoom = '';
+    const w = sh.offsetWidth, room = window.innerWidth - 16;
+    if (w > room) sh.style.zoom = (room / w).toFixed(3);
+  });
+  window.addEventListener('resize', fit);
+  new MutationObserver(fit).observe(document.body, { childList: true, subtree: true });
+  window.addEventListener('load', fit);
+})();
+</script>
+</body>
+</html>

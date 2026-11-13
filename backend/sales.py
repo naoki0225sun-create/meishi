@@ -557,6 +557,12 @@ class DealMove(BaseModel):
     pipeline: str
 
 
+class BulkStageIn(BaseModel):
+    ids: list[int]
+    stage: Optional[str] = None
+    stages: Optional[dict[str, str]] = None   # 元に戻すとき: {id: 前の段階}
+
+
 class DealUpdate(BaseModel):
     pipeline: Optional[str] = None
     owner: Optional[str] = None         # "" で担当なし
@@ -978,8 +984,7 @@ def change_stage(c, tenant_id, deal_id, cur_stage, new_stage, sets, lost_reason=
     if new_stage not in p["stages"]:
         raise HTTPException(400, f"{p['label']}のステージではありません: {new_stage}")
     if new_stage == p["lost"]:
-        if p["reason_required"] and not lost_reason:
-            raise HTTPException(400, "失注にするには失注理由を選んでください")
+        # 理由はあとからでもよい（ボタンひとつで失注にできるように）
         if lost_reason:
             sets["lost_reason"] = lost_reason
     else:
@@ -1768,6 +1773,11 @@ def build_router(check_session: Callable, fetch_cards: Callable,
         if d.get("vendor_id"):
             with _conn() as c:
                 d["vendor_name"] = vendor_names(c, t).get(d["vendor_id"])
+        try:   # 業者が入れた会社の情報（住所・公式サイトなど）
+            vi = json.loads(d.get("vendor_contact") or "{}")
+            d["vendor_info"] = {k: vi.get(k) for k in ("department", "zip", "address", "industry", "web", "fax", "mobile") if vi.get(k)} if isinstance(vi, dict) else {}
+        except (TypeError, ValueError):
+            d["vendor_info"] = {}
         d["same_site"] = []
         k = norm_site(d.get("site_name"))
         with _conn() as c:
@@ -1885,6 +1895,33 @@ def build_router(check_session: Callable, fetch_cards: Callable,
             if update_in_tx(c, t, deal_id, data):
                 c.commit()
         return {"ok": True}
+
+    @r.post("/deals/bulk-stage")
+    def bulk_stage(body: BulkStageIn, session: dict = Depends(check_session)):
+        """まとめて段階を変える（保留・失注・ほかの段階）。段階が合わない案件（別の種類）は飛ばす"""
+        t = session["tenant_id"]
+        ids = list(dict.fromkeys(body.ids))[:300]
+        if not ids:
+            raise HTTPException(400, "案件を選んでください")
+        done, skipped, before = [], [], []
+        with _conn() as c:
+            c.execute("BEGIN IMMEDIATE")
+            for i in ids:
+                row = c.execute("SELECT id, stage, pipeline FROM deals WHERE id=? AND tenant_id=?", (i, t)).fetchone()
+                if not row:
+                    skipped.append(i)
+                    continue
+                stage = body.stages.get(str(i)) if body.stages else body.stage
+                if not stage or row["stage"] == stage:
+                    continue
+                if stage not in pipeline_of(row["pipeline"])["stages"]:
+                    skipped.append(i)
+                    continue
+                update_in_tx(c, t, i, {"stage": stage})
+                done.append(i)
+                before.append({"id": i, "stage": row["stage"]})
+            c.commit()
+        return {"updated": len(done), "ids": done, "skipped": skipped, "before": before}
 
     # ── 見積明細（品名・材質・板厚・数量・単価） ──
     def _item_body(body: "ItemIn") -> tuple:

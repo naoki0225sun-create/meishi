@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="theme-color" content="#2556E8">
+  <title>図面管理</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/split.css">
+  <link rel="stylesheet" href="/sales.css">
+  <link rel="stylesheet" href="/theme.css">
+  <link rel="stylesheet" href="/zumen.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="app-page zm-page">
+  <div class="app-shell">
+    <header class="top-bar">
+      <div class="top-bar-left">
+        <div class="brand-logo brand-logo-sm">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 3h12l6 6v12H3z"/><path d="M15 3v6h6"/><path d="M7 13h10M7 17h6"/>
+          </svg>
+        </div>
+        <div class="top-bar-title-group">
+          <div class="top-bar-title"><span id="tenantName">—</span> 図面</div>
+          <div class="top-bar-count" id="zmCount">—</div>
+        </div>
+      </div>
+      <nav class="app-nav" id="appNav" aria-label="画面の切り替え"></nav>
+      <div class="top-bar-right">
+        <select class="me-select" id="meSelect" title="このブラウザを使う人" style="display:none"></select>
+        <a class="btn-ghost" href="/app.html" title="名刺管理へ">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2.5"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+          <span class="btn-ghost-label">名刺</span>
+        </a>
+        <a class="btn-ghost" href="/sales.html" title="営業管理へ">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+          <span class="btn-ghost-label">営業</span>
+        </a>
+        <button class="btn-sm btn-sm-primary sales-new-btn" id="uploadBtn" title="図面・注文書・見積書などを追加します（画面にドラッグしても追加できます）">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>
+          書類を追加
+        </button>
+        <input type="file" id="fileInput" multiple accept="application/pdf,image/*,.dxf,.dwg,.step,.stp,.igs,.iges" style="display:none">
+      </div>
+    </header>
+
+    <main class="main-grid zm-grid" data-split="34" id="inboxGrid" style="display:none" hidden>
+      <section class="pane pane-list" id="listPane"></section>
+      <section class="pane pane-detail" id="detailPane">
+        <div class="detail-empty">
+          <div class="detail-empty-icon">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h12l6 6v12H3z"/><path d="M15 3v6h6"/></svg>
+          </div>
+          <p class="detail-empty-text">左の一覧から書類を選ぶと、AIが読み取った内容を確認して確定できます</p>
+        </div>
+      </section>
+    </main>
+    <section class="view-pane zm-view" id="viewPane" style="display:none"></section>
+  </div>
+
+  <!-- 書類を落とす場所（画面全体） -->
+  <div class="zm-drop" id="dropOverlay"><div class="zm-drop-box">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>
+    <b>ここにドロップすると取り込みます</b><span>PDF（FAXを含む）・写真・CADファイルに対応しています。複数のファイルをまとめて追加できます</span></div></div>
+
+  <!-- 大きく見る・差分 -->
+  <div class="zm-modal" id="zmModal" style="display:none"><div class="zm-modal-box" id="zmModalBox"></div></div>
+
+  <div class="toast-container" id="toastContainer"></div>
+  <div class="confirm-modal-overlay" id="confirmModalOverlay" style="display:none">
+    <div class="confirm-modal">
+      <div class="confirm-modal-icon" id="confirmModalIcon"></div>
+      <div class="confirm-modal-title" id="confirmModalTitle"></div>
+      <div class="confirm-modal-message" id="confirmModalMessage"></div>
+      <div class="confirm-modal-actions">
+        <button class="confirm-modal-btn confirm-modal-btn-cancel" id="confirmModalCancel">キャンセル</button>
+        <button class="confirm-modal-btn confirm-modal-btn-ok" id="confirmModalOk">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/sales-icons.js"></script>
+  <script src="/zumen-viewer.js"></script>
+  <script src="/zumen.js"></script>
+  <script src="/zumen-views.js"></script>
+  <script src="/split.js"></script>
+</body>
+</html>

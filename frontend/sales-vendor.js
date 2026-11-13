@@ -144,9 +144,22 @@ function vendorFieldsHtml(d) {
   return `
     ${d.vendor_id ? `<div class="k">テレアポ業者</div><div class="v"><span class="vendor-badge">${ico('phone', 11)} ${esc(d.vendor_name || '')}</span>
       <div class="kv-note">「業者にも見せる」記録と段階の動きは、業者の画面にも出ます（金額・名刺・社内だけの記録は出ません）</div></div>` : ''}
+    ${vendorInfoHtml(d)}
     <div class="k">架電日時</div><div class="v"><input type="datetime-local" class="email-input compact" id="fTelapo" value="${esc(dt(d.telapo_at))}"></div>
     <div class="k">アポ日時</div><div class="v"><input type="datetime-local" class="email-input compact" id="fAppo" value="${esc(dt(d.appo_at))}">
       <div class="kv-note">カレンダーに出ます。過ぎたら部長が「結果を記録」と声をかけます</div></div>`;
+}
+
+// 業者が入れた会社の情報（住所・公式サイトなど）
+const VINFO = [['department', '部署・役職'], ['zip', '郵便番号'], ['address', '住所'], ['industry', '業種'], ['web', '公式サイト'], ['fax', 'FAX'], ['mobile', '携帯']];
+function vendorInfoHtml(d) {
+  const vi = d.vendor_info || {};
+  const rows = VINFO.filter(([k]) => vi[k]);
+  if (!rows.length) return '';
+  return `<div class="k">業者が入れた会社情報</div><div class="v"><dl class="vinfo">${rows.map(([k, l]) => `<dt>${l}</dt><dd>${k === 'web'
+    ? `<a href="${esc(vi.web)}" target="_blank" rel="noopener">${esc(vi.web.replace(/^https?:\/\//, '').replace(/\/$/, ''))}</a>`
+    : k === 'address' ? `${esc(vi.address)} <a class="vinfo-map" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(vi.address)}" target="_blank" rel="noopener">地図</a>`
+    : esc(vi[k])}</dd>`).join('')}</dl></div>`;
 }
 
 function bindVendorFields(root, d) {

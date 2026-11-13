@@ -344,3 +344,20 @@ body.app-page .top-bar-count { white-space: nowrap; overflow: hidden; text-overf
 }
 .vq-mini { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink-3); padding: 2px 2px 12px; }
 .vq-mini > span { flex: 1 1 200px; min-width: 0; }
+
+/* 状況を動かす（会社の画面・まとめて・ドラッグ） */
+.pd-stsel { display: flex; flex-wrap: wrap; gap: 5px; width: 100%; }
+.pd-stsel .st-pill { appearance: none; border: 1px solid transparent; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; padding: 4px 10px; opacity: .55; }
+.pd-stsel .st-pill:hover { opacity: .85; }
+.pd-stsel .st-pill.is-on { opacity: 1; border-color: currentColor; box-shadow: 0 1px 0 rgba(0,0,0,.04); }
+.lst-bulk.is-on { position: sticky; top: 64px; z-index: 5; box-shadow: 0 6px 18px rgba(15, 23, 42, .18); }
+.lst-bulk-l { color: #AEB7C9; font-size: 12px; }
+.lst-bulk .btn-sm { background: #fff; border-color: #fff; color: var(--ink); }
+.lst-bulk .bs-follow { color: #1D4ED8; } .lst-bulk .bs-appo { color: #8A5A00; } .lst-bulk .bs-hold { color: #15803D; } .lst-bulk .bs-ng { color: #B91C1C; }
+.lt-row[draggable="true"]:not(.lt-head) { cursor: pointer; }
+.lt-row.is-dragging { opacity: .45; }
+.is-dragging-row .lst-tile:not(.t-all) { border-style: dashed; border-color: var(--tc); }
+.lst-tile.is-drop { background: var(--tc) !important; transform: scale(1.04); }
+.lst-tile.is-drop span, .lst-tile.is-drop b { color: #fff !important; }
+.lst-tile { transition: border-color .12s, box-shadow .12s, transform .1s, background .1s; }
+@media (max-width: 360px) { .gseg button { width: 30px; } .gseg { gap: 3px; } }

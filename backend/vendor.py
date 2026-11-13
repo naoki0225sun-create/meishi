@@ -134,6 +134,7 @@ def deal_view(c, vendor: dict, row, detail: bool = False, reqs: Optional[list] =
     out = {"id": row["id"], "title": ct.get("title") or company, "stage": row["stage"],
            "company": company, "contact": ct.get("contact"),   # 業者が入れたものだけ（名刺の情報は出さない）
            "department": ct.get("department"), "phone": ct.get("phone"), "email": ct.get("email"),
+           **{f: ct.get(f) for f, _, _ in EXTRA_FIELDS},
            "telapo_at": row["telapo_at"], "appo_at": row["appo_at"], "created_at": row["created_at"],
            "closed": row["stage"] in sales.CLOSED_STAGES,
            "last_update": last_update or None,
@@ -169,8 +170,33 @@ class LoginIn(BaseModel):
     password: str
 
 
+# 業者が入れる会社の情報（住所など）。こちらの案件にも「業者が入れた会社情報」として出る
+EXTRA_FIELDS = (("zip", 12, "郵便番号"), ("address", 200, "住所"), ("industry", 80, "業種"), ("web", 300, "公式サイト"),
+                ("fax", 40, "FAX"), ("mobile", 40, "携帯"))
+
+
+def _extra(body, ct: dict, only_given: bool = False) -> list:
+    changed = []
+    for f, n, label in EXTRA_FIELDS:
+        v = getattr(body, f, None)
+        if v is None and only_given:
+            continue
+        v = sales._clean_text(v, n, label)
+        if f == "web" and v and not re.match(r"^https?://", v, re.I):
+            v = "https://" + v.lstrip("/")
+        ct[f] = v
+        changed.append(f)
+    return changed
+
+
 class TelapoIn(BaseModel):
     company: str
+    zip: Optional[str] = None
+    address: Optional[str] = None
+    industry: Optional[str] = None
+    web: Optional[str] = None
+    fax: Optional[str] = None
+    mobile: Optional[str] = None
     contact: Optional[str] = None
     department: Optional[str] = None
     phone: Optional[str] = None
@@ -195,6 +221,12 @@ class CallIn(BaseModel):
 
 class ContactIn(BaseModel):
     company: Optional[str] = None
+    zip: Optional[str] = None
+    address: Optional[str] = None
+    industry: Optional[str] = None
+    web: Optional[str] = None
+    fax: Optional[str] = None
+    mobile: Optional[str] = None
     contact: Optional[str] = None
     department: Optional[str] = None
     phone: Optional[str] = None
@@ -412,11 +444,11 @@ def build_router(check_session: Callable, get_tenant: Callable) -> tuple:
 
     @partner.get("/calendar")
     def calendar(frm: Optional[str] = None, to: Optional[str] = None, vendor: dict = Depends(current_vendor)):
-        """予定が入っている時間帯（名前と時間だけ。件名・メモ・お客様は出さない）"""
+        """予定が入っている時間帯（名前と時間）。自分が取ったアポは会社名と住所、ほかのアポは場所の目安（市区町村）だけ"""
         import teamcal
         f, t_ = teamcal._range(frm, to)
         with sales._conn() as c:
-            return {"events": teamcal.busy(c, vendor["tenant_id"], f, t_, detail=False),
+            return {"events": teamcal.busy(c, vendor["tenant_id"], f, t_, detail=False, vendor_id=vendor["id"]),
                     "people": [{"name": p["name"], "color": p["color"]} for p in teamcal.people(c, vendor["tenant_id"])],
                     "slots": teamcal.SLOTS}
 
@@ -464,6 +496,7 @@ def build_router(check_session: Callable, get_tenant: Callable) -> tuple:
         ct = {"company": company, "contact": sales._clean_text(body.contact, 60, "相手の名前"),
               "department": sales._clean_text(body.department, 80, "部署・役職"),
               "phone": sales._clean_text(body.phone, 40, "電話"), "email": sales._clean_text(body.email, 200, "メール")}
+        _extra(body, ct)
         memo = sales._clean_text(body.memo, 5000, "電話のメモ")
         with sales._conn() as c:
             c.execute("BEGIN IMMEDIATE")
@@ -552,6 +585,7 @@ def build_router(check_session: Callable, get_tenant: Callable) -> tuple:
                 if v is not None:
                     ct[f] = sales._clean_text(v, n, label)
                     changed.append(f)
+            changed += _extra(body, ct, only_given=True)
             if not ct.get("company"):
                 raise HTTPException(400, "会社名は空にできません")
             sets = {"vendor_contact": json.dumps(ct, ensure_ascii=False)}

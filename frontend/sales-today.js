@@ -123,7 +123,8 @@ function tdRowHtml(d, key) {
         ${key === 'none' && idle >= 7 ? `<span class="td-idle">${idle}日動きなし</span>` : ''}${d.owner ? `<span class="td-owner-b">${esc(d.owner)}</span>` : ''}</div>
     </div>
     ${dueTxt ? `<span class="td-due ${key === 'late' ? 'is-late' : key === 'today' ? 'is-today' : ''}">${esc(dueTxt)}</span>` : ''}
-    <div class="td-btns">${!open ? (d.next_action && d.next_action_due ? `<button class="btn-sm btn-sm-primary" data-td-done="${d.id}">完了</button>` : `<button class="btn-sm btn-sm-primary" data-td-set="${d.id}">決める</button>`) : ''}</div>
+    <div class="td-btns">${!open ? (d.next_action && d.next_action_due ? `<button class="btn-sm btn-sm-primary" data-td-done="${d.id}">完了</button>` : `<button class="btn-sm btn-sm-primary" data-td-set="${d.id}">決める</button>`) : ''}
+      <button class="btn-sm td-more" data-td-more="${d.id}" title="保留・失注・段階を変える" aria-label="保留・失注・段階を変える">⋯</button></div>
   </div>`;
   if (!open) return head;
   const kinds = S.meta.activity_kinds;
@@ -160,6 +161,7 @@ function bindToday() {
     if (f) { f.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); const el = f.querySelector(mode === 'done' ? '#tdMemo' : '#tdNext'); if (el) el.focus(); }
   };
   pane.querySelectorAll('[data-td-done]').forEach(b => b.onclick = () => openForm(Number(b.dataset.tdDone), 'done'));
+  pane.querySelectorAll('[data-td-more]').forEach(b => b.onclick = e => { e.stopPropagation(); stageMenu(b, Number(b.dataset.tdMore)); });
   pane.querySelectorAll('[data-td-set]').forEach(b => b.onclick = () => openForm(Number(b.dataset.tdSet), 'set'));
   pane.querySelectorAll('[data-td-x]').forEach(b => b.onclick = () => { TD.open = null; renderToday(); });
   pane.querySelectorAll('[data-td-due]').forEach(b => b.onclick = () => { $('tdDue').value = tdAddDays(Number(b.dataset.tdDue)); });

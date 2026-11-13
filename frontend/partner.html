@@ -88,7 +88,7 @@
   .modal-box { background: #fff; border-radius: 18px; width: 100%; max-width: 620px; padding: 22px 24px; }
   .modal-box h3 { margin: 0 0 4px; font-size: 18px; }
   .note { font-size: 12px; color: var(--sub); line-height: 1.6; }
-  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #111827; color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 13px; z-index: 30; display: none; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #111827; color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 13px; z-index: 60; display: none; }
   .back { display: none; }
   .views { display: flex; gap: 2px; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 3px; }
   .views button { appearance: none; border: 0; background: transparent; border-radius: 9px; padding: 6px 14px; font-weight: 700; color: var(--sub); cursor: pointer; white-space: nowrap; }
@@ -121,6 +121,21 @@
   .legend3 i.b { background: #f5c46b; } .legend3 i.ad { background: #e8836b; }
   .side { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 16px; position: sticky; top: 76px; }
   .side h3 { margin: 0 0 10px; font-size: 18px; }
+  .pl.pa { background: #fff4d6; color: #7a4d00; } .pl.pa.mine { background: #fde7c2; font-weight: 700; }
+  .ac-t { font-size: 13px; font-weight: 800; margin: 14px 0 6px; }
+  .ac-list { display: grid; gap: 8px; }
+  .ac { border: 1px solid var(--line); border-left: 4px solid #e0a800; border-radius: 10px; padding: 9px 11px; display: grid; gap: 4px; font-size: 13px; background: #fffdf5; }
+  .ac.mine { border-left-color: #c77700; background: #fff8e8; }
+  .ac-h { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .ac-who { font-size: 12px; color: var(--sub); white-space: nowrap; }
+  .ac-co { font-weight: 800; font-size: 14px; overflow-wrap: anywhere; }
+  .ac-r { display: flex; gap: 6px; align-items: flex-start; line-height: 1.5; min-width: 0; }
+  .ac-r .ic { margin-top: 3px; color: var(--sub); }
+  .ac-r span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .ac-r a { white-space: nowrap; font-size: 12px; }
+  .ac-none { color: var(--sub); font-size: 12px; }
+  .ac-memo { background: #fff; border: 1px solid #f1dfb8; border-radius: 8px; padding: 7px 9px; font-size: 12.5px; line-height: 1.6; white-space: pre-line; overflow-wrap: anywhere; max-height: 9.6em; overflow: auto; }
+  .ac-open { justify-self: start; padding-left: 0; font-size: 12.5px; }
   .sum3 { display: grid; gap: 6px; }
   .s3 { display: flex; justify-content: space-between; align-items: center; border-radius: 10px; padding: 9px 11px; background: var(--ok-l); border: 1px solid #cfebdb; }
   .s3 b { color: var(--ok); } .s3 span { font-size: 12.5px; color: var(--sub); }
@@ -161,7 +176,27 @@
   .dseg button { appearance: none; border: 0; background: #fff; font: inherit; font-size: 12px; padding: 5px 11px; cursor: pointer; color: var(--sub); }
   .dseg button + button { border-left: 1px solid var(--line); }
   .dseg button.on { background: #334155; color: #fff; }
-  .pstate { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+  body:has(.lbulk) .toast { bottom: auto; top: 16px; }
+  .toast-act { appearance: none; border: 0; background: #fff; color: #0f172a; font: inherit; font-size: 12px; font-weight: 700; border-radius: 6px; padding: 3px 9px; margin-left: 10px; cursor: pointer; }
+  .row-zip { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 10px; }
+  @media (max-width: 520px) { .row-zip { grid-template-columns: 1fr; } }
+  .pstate { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+  .spb { appearance: none; border: 1px solid transparent; font: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; opacity: .5; padding: 3px 9px; }
+  .spb:hover { opacity: .85; } .spb.on { opacity: 1; border-color: currentColor; }
+  .pk { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin: -3px 2px -3px -4px; flex: none; cursor: pointer; }
+  .pk input { width: 16px; height: 16px; margin: 0; cursor: pointer; }
+  .item.lrow { cursor: pointer; }
+  .item.is-picked { box-shadow: 0 0 0 2px #2563eb inset; }
+  .item.dragging { opacity: .45; }
+  body.row-drag #lTabs .tab:not(.t-all):not(.t-ok) { border-style: dashed; border-color: #2563eb; }
+  #lTabs .tab.drop { background: #2563eb !important; color: #fff !important; border-color: #2563eb !important; transform: scale(1.05); }
+  .lbulk { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 50; background: #0f172a; color: #fff; border-radius: 14px; padding: 10px 14px;
+    display: flex; gap: 8px 12px; align-items: center; flex-wrap: wrap; box-shadow: 0 10px 30px rgba(15,23,42,.3); max-width: calc(100vw - 24px); font-size: 13px; }
+  .lbulk-btns { display: flex; gap: 5px; flex-wrap: wrap; }
+  .lbulk-btns button { appearance: none; border: 0; background: #fff; color: #0f172a; font: inherit; font-size: 12.5px; font-weight: 700; border-radius: 8px; padding: 5px 10px; cursor: pointer; }
+  .lbulk .lb-follow { color: #1d4ed8; } .lbulk .lb-appo { color: #8a5a00; } .lbulk .lb-hold { color: #15803d; } .lbulk .lb-ng { color: #b91c1c; }
+  .lbulk-x { appearance: none; border: 0; background: none; color: #cbd5e1; font: inherit; font-size: 12.5px; cursor: pointer; text-decoration: underline; }
+  @media (max-width: 720px) { .lbulk { left: 10px; right: 10px; transform: none; bottom: 10px; } }
   .pdone { appearance: none; font: inherit; font-size: 12.5px; font-weight: 700; border: 1px solid var(--line); background: #fff; color: var(--sub); border-radius: 999px; padding: 4px 12px; cursor: pointer; }
   .pdone.on { background: #475467; border-color: #475467; color: #fff; }
   #lSum .s-appo b { color: #8a5a00; } #lSum .s-follow b { color: #1d4ed8; } #lSum .s-ng b { color: #b91c1c; }
@@ -291,6 +326,18 @@
           <div><label class="f">メール</label><input class="in" id="nEmail" maxlength="200" type="email"></div>
         </div>
         <div class="row2">
+          <div><label class="f">携帯</label><input class="in" id="nMobile" maxlength="40" inputmode="tel"></div>
+          <div><label class="f">FAX</label><input class="in" id="nFax" maxlength="40" inputmode="tel"></div>
+        </div>
+        <div class="row-zip">
+          <div><label class="f">郵便番号</label><input class="in" id="nZip" maxlength="12" inputmode="numeric" placeholder="566-0052"></div>
+          <div><label class="f">住所</label><input class="in" id="nAddress" maxlength="200" placeholder="大阪府摂津市…"></div>
+        </div>
+        <div class="row2">
+          <div><label class="f">業種</label><input class="in" id="nIndustry" maxlength="80" placeholder="例: 配電盤製造"></div>
+          <div><label class="f">公式サイト</label><input class="in" id="nWeb" maxlength="300" inputmode="url" placeholder="https://"></div>
+        </div>
+        <div class="row2">
           <div><label class="f">架電日時</label><input class="in" type="datetime-local" id="nTel"></div>
           <div><label class="f">結果</label><select class="in" id="nResult"></select></div>
         </div>
@@ -324,6 +371,8 @@ const PICO = {
   doc: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>',
   meet: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/><path d="m9 15.5 2 2 4-4"/>',
   ban: '<circle cx="12" cy="12" r="9"/><path d="m5.7 5.7 12.6 12.6"/>',
+  pin: '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
 };
 function ico(n, z = 14) { return `<svg class="ic" width="${z}" height="${z}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;flex:none">${PICO[n] || ''}</svg>`; }
 </script>
@@ -337,7 +386,15 @@ const KIND = { call: '電話', meeting: '打合せ・訪問', email: 'メール'
 const P = { me: null, deals: [], sel: null, detail: null, tab: 'all', q: '' };
 const KEY = new URLSearchParams(location.search).get('k') || '';
 
-function toast(msg) { const t = $('toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(toast._t); toast._t = setTimeout(() => t.style.display = 'none', 2600); }
+function toast(msg, act) {
+  const t = $('toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(toast._t);
+  if (act) {
+    const b = document.createElement('button'); b.className = 'toast-act'; b.textContent = act.label;
+    b.onclick = async () => { t.style.display = 'none'; try { await act.fn(); } catch (e) { toast(e.message); } };
+    t.appendChild(b);
+  }
+  toast._t = setTimeout(() => t.style.display = 'none', act ? 6000 : 2600);
+}
 
 async function api(path, opt = {}) {
   const r = await fetch(path, { credentials: 'include', headers: { 'Content-Type': 'application/json' }, ...opt });
@@ -554,10 +611,15 @@ function renderDetail() {
       <div class="k">相手</div><div>${esc([d.department, d.contact].filter(Boolean).join(' ')) || '—'}</div>
       <div class="k">電話</div><div>${d.phone ? `<a href="tel:${esc(d.phone.replace(/[^\d+]/g, ''))}">${esc(d.phone)}</a>` : '—'}</div>
       <div class="k">メール</div><div>${esc(d.email || '—')}</div>
+      ${d.mobile ? `<div class="k">携帯</div><div><a href="tel:${esc(d.mobile.replace(/[^\d+]/g, ''))}">${esc(d.mobile)}</a></div>` : ''}
+      ${d.fax ? `<div class="k">FAX</div><div>${esc(d.fax)}</div>` : ''}
+      ${d.address || d.zip ? `<div class="k">住所</div><div>${d.zip ? `〒${esc(d.zip.replace(/^〒/, ''))} ` : ''}${esc(d.address || '')}</div>` : ''}
+      ${d.industry ? `<div class="k">業種</div><div>${esc(d.industry)}</div>` : ''}
+      ${d.web ? `<div class="k">公式サイト</div><div><a href="${esc(d.web)}" target="_blank" rel="noopener">${esc(d.web.replace(/^https?:\/\//, ''))}</a></div>` : ''}
       <div class="k">架電日時</div><div>${esc(fmt(d.telapo_at)) || '—'}</div>
       <div class="k">アポ日時</div><div>${esc(fmt(d.appo_at)) || '—'}</div>
     </div>
-    <button class="btn link" id="editContact" style="padding-left:0">連絡先を直す</button>
+    <button class="btn link" id="editContact" style="padding-left:0">連絡先・会社の情報を直す</button>
     <div id="contactForm"></div>
     ${d.closed ? '<div class="note" style="margin-top:12px">この案件は終わっています。</div>' : `
     <div class="sec"><div class="sec-t">電話の記録を追加</div>
@@ -584,12 +646,19 @@ function renderDetail() {
         <div><label class="f">部署・役職</label><input class="in" id="eDept" value="${esc(d.department || '')}" maxlength="80"></div></div>
       <div class="row2"><div><label class="f">電話</label><input class="in" id="ePhone" value="${esc(d.phone || '')}" maxlength="40"></div>
         <div><label class="f">メール</label><input class="in" id="eEmail" value="${esc(d.email || '')}" maxlength="200"></div></div>
+      <div class="row2"><div><label class="f">携帯</label><input class="in" id="eMobile" value="${esc(d.mobile || '')}" maxlength="40"></div>
+        <div><label class="f">FAX</label><input class="in" id="eFax" value="${esc(d.fax || '')}" maxlength="40"></div></div>
+      <div class="row-zip"><div><label class="f">郵便番号</label><input class="in" id="eZip" value="${esc(d.zip || '')}" maxlength="12"></div>
+        <div><label class="f">住所</label><input class="in" id="eAddress" value="${esc(d.address || '')}" maxlength="200"></div></div>
+      <div class="row2"><div><label class="f">業種</label><input class="in" id="eIndustry" value="${esc(d.industry || '')}" maxlength="80"></div>
+        <div><label class="f">公式サイト</label><input class="in" id="eWeb" value="${esc(d.web || '')}" maxlength="300"></div></div>
       <div class="actions"><button class="btn" id="eCancel">やめる</button><button class="btn primary" id="eSave">保存</button></div></div>`;
     $('eCancel').onclick = () => { $('contactForm').innerHTML = ''; };
     $('eSave').onclick = async () => {
       try {
         await api(`/api/partner/deals/${d.id}/contact`, { method: 'PUT', body: JSON.stringify({ company: $('eCompany').value, contact: $('eContact').value,
-          department: $('eDept').value, phone: $('ePhone').value, email: $('eEmail').value }) });
+          department: $('eDept').value, phone: $('ePhone').value, email: $('eEmail').value, mobile: $('eMobile').value, fax: $('eFax').value,
+          zip: $('eZip').value, address: $('eAddress').value, industry: $('eIndustry').value, web: $('eWeb').value }) });
         toast('連絡先を直しました'); await loadList(); await openDeal(d.id);
       } catch (e) { toast(e.message); }
     };
@@ -626,7 +695,8 @@ $('newModal').onclick = e => { if (e.target === $('newModal')) $('newModal').cla
 $('newForm').onsubmit = async e => {
   e.preventDefault();
   const body = { company: $('nCompany').value.trim(), contact: $('nContact').value, department: $('nDept').value, phone: $('nPhone').value,
-    email: $('nEmail').value, telapo_at: $('nTel').value || null, result: $('nResult').value || null, appo_at: $('nAppo').value || null,
+    email: $('nEmail').value, mobile: $('nMobile').value, fax: $('nFax').value, zip: $('nZip').value, address: $('nAddress').value,
+    industry: $('nIndustry').value, web: $('nWeb').value, telapo_at: $('nTel').value || null, result: $('nResult').value || null, appo_at: $('nAppo').value || null,
     next_call_on: $('nNext').value || null, memo: $('nMemo').value, docs: docsVal('n') };
   if (!body.company) { toast('会社名を入れてください'); return; }
   $('newSave').disabled = true;
@@ -639,7 +709,7 @@ $('newForm').onsubmit = async e => {
 };
 
 // ── リスト（先方と共有しているリスト） ──
-const L = { lists: [], cur: null, rows: [], sel: null, tab: 'all', done: 'all', q: '', detail: null };
+const L = { lists: [], cur: null, rows: [], sel: null, tab: 'all', done: 'all', q: '', detail: null, checked: new Set() };
 // 状況（Excelの塗り分けと同じ: 赤=かけない 黄=アポ 青=資料送付・再架電 緑=保留）。文字が赤い行＝完了
 const STL = { new: '未着手', calling: '架電中', follow: '資料送付・再架電', appo: 'アポ', hold: '保留', ng: 'かけない' };
 const stPill = r => `<span class="sp sp-${r.status}">${STL[r.status] || ''}</span>${r.done ? '<span class="sp sp-done">完了</span>' : ''}`;
@@ -674,6 +744,14 @@ function renderLTabs() {
     + `<span class="dseg">${LDONE.map(([k, l]) => `<button class="${L.done === k ? 'on' : ''}" data-ld="${k}">${l}</button>`).join('')}</span>`;
   $('lTabs').querySelectorAll('[data-lt]').forEach(b => b.onclick = () => { L.tab = b.dataset.lt; L.tabSet = true; renderLTabs(); renderLList(); });
   $('lTabs').querySelectorAll('[data-ld]').forEach(b => b.onclick = () => { L.done = b.dataset.ld; renderLTabs(); renderLList(); });
+  // 会社をタブへドラッグすると、その状況に移す（選んだ会社はまとめて）
+  $('lTabs').querySelectorAll('[data-lt]').forEach(t => {
+    if (!STL[t.dataset.lt]) return;
+    t.ondragover = e => { if (L.drag == null) return; e.preventDefault(); t.classList.add('drop'); };
+    t.ondragleave = () => t.classList.remove('drop');
+    t.ondrop = e => { e.preventDefault(); t.classList.remove('drop'); const id = L.drag; if (!id) return;
+      setLStatus(L.checked.has(id) && L.checked.size > 1 ? [...L.checked] : [id], t.dataset.lt); };
+  });
 }
 function renderLList() {
   const f = LTABS.find(t => t[0] === L.tab)[2];
@@ -681,13 +759,58 @@ function renderLList() {
   const order = { ok: 0, hold: 1, undefined: 2, null: 2, ng: 3 };
   const list = L.rows.filter(f).filter(doneOk).filter(r => !q || [r.company, r.industry, r.address, r.last_memo].some(v => (v || '').toLowerCase().includes(q)));
   if (L.tab === 'ok') list.sort((a, b) => (order[a.verdict] - order[b.verdict]) || ((b.priority || 0) - (a.priority || 0)));
-  $('lList').innerHTML = list.map(r => `<div class="item lrow s-${r.status} ${r.done ? 'is-done' : ''} ${L.sel === r.id ? 'on' : ''}" data-id="${r.id}">
-      <div class="r1"><span class="co">${esc(r.company)}</span>${r.rank ? `<span class="rk ${esc(r.rank)}" title="先方のAI調査のマッチ度">${esc(r.rank)}</span>` : ''}<span class="sps">${stPill(r)}</span></div>
+  $('lList').innerHTML = list.map(r => `<div class="item lrow s-${r.status} ${r.done ? 'is-done' : ''} ${L.sel === r.id ? 'on' : ''} ${L.checked.has(r.id) ? 'is-picked' : ''}" data-id="${r.id}" draggable="true">
+      <div class="r1"><label class="pk" title="選ぶ（まとめて動かす）"><input type="checkbox" data-pk="${r.id}" ${L.checked.has(r.id) ? 'checked' : ''} aria-label="選ぶ"></label><span class="co">${esc(r.company)}</span>${r.rank ? `<span class="rk ${esc(r.rank)}" title="先方のAI調査のマッチ度">${esc(r.rank)}</span>` : ''}<span class="sps">${stPill(r)}</span></div>
       <div class="r2">${r.tel ? `<span>${ico('phone', 12)} ${esc(r.tel)}</span>` : ''}${r.industry ? `<span>${esc(r.industry)}</span>` : ''}${r.calls ? `<span>記録 ${r.calls}件</span>` : ''}${r.verdict ? vb(r.verdict) : ''}</div>
       ${r.last_memo ? `<div class="r3 memo">${esc(r.last_memo)}</div>` : ''}
       ${r.verdict_reason ? `<div class="r3 why">${esc(r.verdict_reason)}</div>` : ''}</div>`).join('')
     || `<div class="empty">${L.cur ? '該当する会社はありません' : 'まだ共有されているリストがありません。「＋ リストをアップロード」から共有できます。'}</div>`;
-  $('lList').querySelectorAll('.item').forEach(el => el.onclick = () => openProspect(Number(el.dataset.id)));
+  $('lList').querySelectorAll('.item').forEach(el => {
+    el.onclick = e => { if (e.target.closest('.pk')) return; openProspect(Number(el.dataset.id)); };
+    el.ondragstart = e => { L.drag = Number(el.dataset.id); el.classList.add('dragging'); document.body.classList.add('row-drag');
+      e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', String(L.drag)); } catch { /* */ } };
+    el.ondragend = () => { el.classList.remove('dragging'); document.body.classList.remove('row-drag'); L.drag = null;
+      document.querySelectorAll('#lTabs .drop').forEach(t => t.classList.remove('drop')); };
+  });
+  $('lList').querySelectorAll('[data-pk]').forEach(cb => cb.onchange = () => {
+    const id = Number(cb.dataset.pk); cb.checked ? L.checked.add(id) : L.checked.delete(id);
+    cb.closest('.item').classList.toggle('is-picked', cb.checked); renderLBulk();
+  });
+  renderLBulk();
+}
+
+// まとめて動かす（下のバー）
+function renderLBulk() {
+  let bar = $('lBulk');
+  const ids = new Set(L.rows.map(r => r.id));
+  [...L.checked].forEach(id => { if (!ids.has(id)) L.checked.delete(id); });
+  if (!L.checked.size) { if (bar) bar.remove(); return; }
+  if (!bar) { bar = document.createElement('div'); bar.id = 'lBulk'; bar.className = 'lbulk'; document.body.appendChild(bar); }
+  bar.innerHTML = `<b>${L.checked.size}社を選択中</b>
+    <div class="lbulk-btns">${Object.entries(STL).map(([k, l]) => `<button class="lb-${k}" data-lbs="${k}">${l}</button>`).join('')}</div>
+    <div class="lbulk-btns"><button data-lbd="1">完了にする</button><button data-lbd="0">完了を外す</button></div>
+    <button class="lbulk-x" id="lBulkX">選択をやめる</button>`;
+  bar.querySelectorAll('[data-lbs]').forEach(b => b.onclick = () => setLStatus([...L.checked], b.dataset.lbs));
+  bar.querySelectorAll('[data-lbd]').forEach(b => b.onclick = () => setLDone([...L.checked], b.dataset.lbd === '1'));
+  $('lBulkX').onclick = () => { L.checked.clear(); renderLList(); };
+}
+
+async function setLStatus(ids, status) {
+  ids = ids.filter(id => { const r = L.rows.find(x => x.id === id); return r && r.status !== status; });
+  if (!ids.length) { toast(`もう「${STL[status]}」です`); return; }
+  try {
+    const r = await api('/api/partner/prospects/status', { method: 'POST', body: JSON.stringify({ ids, status }) });
+    L.checked.clear(); await loadRows(); if (L.sel) await openProspect(L.sel);
+    toast(`${r.updated}社を「${STL[status]}」にしました${r.skipped ? `（${r.skipped}社は先方が判定済みのため動かせません）` : ''}`, {
+      label: '元に戻す', fn: async () => { await api('/api/partner/prospects/status', { method: 'POST', body: JSON.stringify({ restore: r.before }) }); await loadRows(); toast('元に戻しました'); } });
+  } catch (e) { toast(e.message); }
+}
+
+async function setLDone(ids, done) {
+  try {
+    for (const id of ids) await api(`/api/partner/prospects/${id}/done`, { method: 'POST', body: JSON.stringify({ done }) });
+    L.checked.clear(); await loadRows(); toast(`${ids.length}社を${done ? '完了にしました' : '未完了に戻しました'}`);
+  } catch (e) { toast(e.message); }
 }
 $('lq').oninput = e => { L.q = e.target.value; renderLList(); };
 $('lSel').onchange = async () => { L.tabSet = false; L.cur = L.lists.find(l => l.id === Number($('lSel').value)) || null; L.sel = null; await loadRows(); $('lPanel').innerHTML = '<div class="empty">左の一覧から会社を選んでください。</div>'; };
@@ -703,7 +826,7 @@ async function openProspect(id) {
     <button class="btn link back" id="lBack">← 一覧に戻る</button>
     <div style="display:flex;gap:10px;align-items:center"><h2 style="flex:1">${esc(p.company)}</h2>${p.deal && !p.deal.closed ? `<span class="stage s-${esc(p.deal.stage)}">${esc(p.deal.stage)}</span>` : vb(p.verdict)}</div>
     <div class="sub">${esc([p.industry, p.address].filter(Boolean).join('・'))}</div>
-    <div class="pstate">${(() => { const r = L.rows.find(x => x.id === p.id); return r ? `<span class="sp sp-${r.status}">${STL[r.status] || ''}</span>` : ''; })()}
+    <div class="pstate">${(() => { const r = L.rows.find(x => x.id === p.id) || {}; return Object.entries(STL).map(([k, l]) => `<button class="sp sp-${k} spb ${r.status === k ? 'on' : ''}" data-pst="${k}">${l}</button>`).join(''); })()}
       <button class="pdone ${p.done ? 'on' : ''}" id="pDone">${p.done ? '完了（押すと戻す）' : '完了にする'}</button></div>
     <div class="kv"><div class="k">電話</div><div>${p.tel ? `<a href="tel:${esc(p.tel.replace(/[^\d+]/g, ''))}">${esc(p.tel)}</a>` : '—'}</div>
       <div class="k">公式サイト</div><div>${p.web ? `<a href="${esc(p.web)}" target="_blank" rel="noopener noreferrer">${esc(p.web)}</a>` : '—'}</div></div>
@@ -725,6 +848,7 @@ async function openProspect(id) {
     <div class="sec"><div class="sec-t">電話の記録（新しい順）</div><div class="tl">${calls}</div></div>`;
   document.body.classList.add('detail');
   $('lBack').onclick = () => { document.body.classList.remove('detail'); L.sel = null; renderLList(); };
+  $('lPanel').querySelectorAll('[data-pst]').forEach(b => b.onclick = () => setLStatus([p.id], b.dataset.pst));
   $('pDone').onclick = async () => {
     try { await api(`/api/partner/prospects/${p.id}/done`, { method: 'POST', body: JSON.stringify({ done: !p.done }) });
       toast(p.done ? '未完了に戻しました' : '完了にしました'); await loadRows(); await openProspect(p.id); } catch (e) { toast(e.message); }
@@ -804,13 +928,31 @@ async function renderCal() {
     const allDay = evs.filter(x => x.all_day && x.kind === 'event');
     const bars = ['am', 'pm1', 'pm2'].map(sl => { const r = C.slots[sl]; return `<span class="${evs.some(x => x.start < r.end && x.end > r.start) ? 'b' : ''} ${allDay.length ? 'ad' : ''}"></span>`; }).join('');
     h += `<button class="day w${d.getDay()} ${d.getMonth() !== C.month.getMonth() ? 'out' : ''} ${k < today ? 'past' : ''} ${k === today ? 'today' : ''} ${k === C.sel ? 'sel' : ''}" data-d="${k}">
-      <span class="dn">${d.getDate()}</span>${allDay.length ? `<span class="adl">終日</span>` : ''}${evs.filter(x => !(x.all_day && x.kind === 'event')).slice(0, allDay.length ? 1 : 2).map(x => `<span class="pl">${esc(x.person)} ${esc(x.kind === 'appo' ? 'アポ' : x.label)}</span>`).join('')}
+      <span class="dn">${d.getDate()}</span>${allDay.length ? `<span class="adl">終日</span>` : ''}${evs.filter(x => !(x.all_day && x.kind === 'event')).slice(0, allDay.length ? 1 : 2).map(x => `<span class="pl ${x.kind === 'appo' ? 'pa' : ''} ${x.mine ? 'mine' : ''}">${x.kind === 'appo' ? `${x.all_day ? '' : esc(hm(x.start)) + ' '}アポ${placeShort(x) ? '・' + esc(placeShort(x)) : ''}` : `${esc(x.person)} ${esc(x.label)}`}</span>`).join('')}
       <span class="slots3">${bars}</span></button>`;
   }
   $('cGrid').innerHTML = h;
   $('cGrid').querySelectorAll('[data-d]').forEach(b => b.onclick = () => { C.sel = b.dataset.d; renderCal(); });
   renderSide();
 }
+// 場所の目安（都道府県を省いた市区町村）
+const placeShort = x => (x.area || '').replace(/^(東京都|北海道|京都府|大阪府|.{2,3}県)/, '');
+const mapUrl = q => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
+function appoCard(x) {
+  const when = x.all_day ? '時間未定' : `${hm(x.start)}〜${hm(x.end)}`;
+  if (x.mine) {
+    return `<div class="ac mine"><div class="ac-h"><b>${when} アポ</b><span class="ac-who">${esc(x.person)}</span></div>
+      <div class="ac-co">${esc(x.company || '')}</div>
+      ${x.address ? `<div class="ac-r">${ico('pin', 13)}<span>${esc(x.address)}</span><a href="${mapUrl(x.address.replace(/^〒\S+\s*/, ''))}" target="_blank" rel="noopener">地図</a></div>` : '<div class="ac-r ac-none">住所が入っていません（記録の「連絡先・会社の情報を直す」で入れられます）</div>'}
+      ${x.contact ? `<div class="ac-r">${ico('user', 13)}<span>${esc(x.contact)}</span></div>` : ''}
+      ${x.phone ? `<div class="ac-r">${ico('phone', 13)}<a href="tel:${esc(x.phone.replace(/[^\d+]/g, ''))}">${esc(x.phone)}</a></div>` : ''}
+      ${x.note ? `<div class="ac-memo">${esc(x.note)}</div>` : ''}
+      <button class="btn link ac-open" data-open-deal="${x.deal_id}">記録を開く</button></div>`;
+  }
+  return `<div class="ac"><div class="ac-h"><b>${when} アポ</b><span class="ac-who">${esc(x.person)}</span></div>
+    ${x.area ? `<div class="ac-r">${ico('pin', 13)}<span>${esc(x.area)}あたり</span><a href="${mapUrl(x.area)}" target="_blank" rel="noopener">地図</a></div>` : '<div class="ac-r ac-none">場所はわかりません</div>'}</div>`;
+}
+
 function busyAt(evs, start, end) { return evs.filter(x => x.start < end && x.end > start); }
 function renderSide() {
   const k = C.sel; const d = new Date(k + 'T00:00:00');
@@ -820,8 +962,10 @@ function renderSide() {
   const ad = [...new Set(evs.filter(x => x.all_day && x.kind === 'event').map(x => x.person))];
   $('cSide').innerHTML = `<h3>${d.getMonth() + 1}月${d.getDate()}日（${WD[d.getDay()]}）</h3>
     ${ad.length ? `<div class="adn">${ico('ban')} <b>${esc(ad.join('・'))}</b> はこの日 <b>終日</b> 予定があります（一日空いていません）</div>` : ''}<div class="sum3">${rows}</div>
-    <div class="busy-list">${evs.map(x => `<div class="bl"><i style="background:${esc(x.color)}"></i>${esc(x.person)}<em>${x.all_day ? (x.kind === 'appo' ? 'アポ（時間未定）' : '終日') : `${hm(x.start)}〜${hm(x.end)}${x.kind === 'appo' ? ' アポ' : ''}`}</em></div>`).join('')
-      || '<div class="note">この日は予定がありません</div>'}</div>`;
+    ${evs.some(x => x.kind === 'appo') ? `<div class="ac-t">この日のアポと場所</div><div class="ac-list">${evs.filter(x => x.kind === 'appo').map(appoCard).join('')}</div>` : ''}
+    <div class="busy-list">${evs.filter(x => x.kind !== 'appo').map(x => `<div class="bl"><i style="background:${esc(x.color)}"></i>${esc(x.person)}<em>${x.all_day ? '終日' : `${hm(x.start)}〜${hm(x.end)}`}</em></div>`).join('')
+      || (evs.length ? '' : '<div class="note">この日は予定がありません</div>')}</div>`;
+  $('cSide').querySelectorAll('[data-open-deal]').forEach(b => b.onclick = async () => { switchView('list'); await openDeal(Number(b.dataset.openDeal)); });
 }
 $('cPrev').onclick = () => { C.month = new Date(C.month.getFullYear(), C.month.getMonth() - 1, 1); renderCal(); };
 $('cNext').onclick = () => { C.month = new Date(C.month.getFullYear(), C.month.getMonth() + 1, 1); renderCal(); };

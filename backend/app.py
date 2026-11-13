@@ -47,6 +47,9 @@ import vendor  # テレアポ業者との連携
 import teamcal  # みんなの予定（共有カレンダー）
 import prospects  # テレアポリストの共有・判定・AI調査
 import vendorreq  # 業者とのやりとり（再テレアポの依頼・資料送付）
+import zumen  # 図面管理（図面タブ）
+import zumen_extra  # 図面管理の追加機能（書き込み・共有・質問・逆算・メール）
+import zumen_link  # 図面と名刺・営業・グループ会社とのつなぎ込み
 
 load_dotenv()
 
@@ -60,7 +63,80 @@ SESSION_COOKIE_NAME = "meishi_session"
 SESSION_DURATION_HOURS = 24 * 7
 CACHE_DURATION_SECONDS = 300
 
-active_sessions: dict[str, dict] = {}
+class _Sessions:
+    """ログインの保持（DBに置くので、再起動しても入り直しにならない）。トークンそのものは保存せずハッシュだけ持つ"""
+
+    def __init__(self):
+        self._mem: dict[str, dict] = {}
+        self._ready = False
+
+    def _db(self):
+        return sales._conn()
+
+    def _ensure(self, c):
+        if not self._ready:
+            c.execute("""CREATE TABLE IF NOT EXISTS app_sessions (token_hash TEXT PRIMARY KEY, tenant_id TEXT NOT NULL,
+                expires_at TEXT NOT NULL, created_at TEXT NOT NULL)""")
+            c.commit()
+            self._ready = True
+
+    @staticmethod
+    def _h(token: str) -> str:
+        return hashlib.sha256(token.encode()).hexdigest()
+
+    def get(self, token: str):
+        if token in self._mem:
+            return self._mem[token]
+        try:
+            with self._db() as c:
+                self._ensure(c)
+                row = c.execute("SELECT tenant_id, expires_at FROM app_sessions WHERE token_hash=?", (self._h(token),)).fetchone()
+        except Exception:
+            return None
+        if not row:
+            return None
+        sess = {"tenant_id": row["tenant_id"], "expires_at": datetime.fromisoformat(row["expires_at"]), "_saved": row["expires_at"]}
+        self._mem[token] = sess
+        return sess
+
+    def __setitem__(self, token: str, sess: dict):
+        self._mem[token] = sess
+        with self._db() as c:
+            self._ensure(c)
+            c.execute("DELETE FROM app_sessions WHERE expires_at < ?", (datetime.now().isoformat(timespec="seconds"),))
+            c.execute("INSERT OR REPLACE INTO app_sessions (token_hash, tenant_id, expires_at, created_at) VALUES (?,?,?,?)",
+                      (self._h(token), sess["tenant_id"], sess["expires_at"].isoformat(timespec="seconds"), datetime.now().isoformat(timespec="seconds")))
+            c.commit()
+        sess["_saved"] = sess["expires_at"].isoformat(timespec="seconds")
+
+    def pop(self, token: str, default=None):
+        sess = self._mem.pop(token, default)
+        try:
+            with self._db() as c:
+                self._ensure(c)
+                c.execute("DELETE FROM app_sessions WHERE token_hash=?", (self._h(token),))
+                c.commit()
+        except Exception:
+            pass
+        return sess
+
+    def touch(self, token: str, sess: dict):
+        """期限の延長は1時間に1回だけ書き込む"""
+        saved = sess.get("_saved")
+        if saved and sess["expires_at"] - datetime.fromisoformat(saved) < timedelta(hours=1):
+            return
+        try:
+            with self._db() as c:
+                self._ensure(c)
+                c.execute("UPDATE app_sessions SET expires_at=? WHERE token_hash=?",
+                          (sess["expires_at"].isoformat(timespec="seconds"), self._h(token)))
+                c.commit()
+            sess["_saved"] = sess["expires_at"].isoformat(timespec="seconds")
+        except Exception:
+            pass
+
+
+active_sessions = _Sessions()
 _cache: dict[str, dict] = {}
 
 
@@ -100,6 +176,8 @@ def on_startup():
     teamcal.init_db()
     prospects.init_db()
     vendorreq.init_db()
+    zumen.init_db()
+    zumen_extra.init_db()
     prospects.start_worker()
     os.makedirs(IMAGES_DIR, exist_ok=True)
 
@@ -173,6 +251,7 @@ def check_session(session_token: Optional[str] = Cookie(None, alias=SESSION_COOK
         active_sessions.pop(session_token, None)
         raise HTTPException(status_code=401, detail="セッション期限切れ")
     sess["expires_at"] = datetime.now() + timedelta(hours=SESSION_DURATION_HOURS)
+    active_sessions.touch(session_token, sess)
     return sess
 
 
@@ -1092,6 +1171,12 @@ app.include_router(_vreq_admin)
 app.include_router(_vreq_partner)
 app.include_router(digest.build_router(check_session, get_tenant, _sales_router.load_deal, _sales_router.update_in_tx, _sales_router))
 app.include_router(dedupe.build_router(check_session, fetch_cards, image_path_for))
+_zumen_router = zumen.build_router(check_session, fetch_cards, get_tenant, sales_router=_sales_router, list_tenants=load_tenants)
+app.include_router(_zumen_router)
+_zx_router, _zx_public = zumen_extra.build_router(check_session, fetch_cards, get_tenant, main_router=_zumen_router)
+app.include_router(_zx_router)
+app.include_router(_zx_public)
+app.include_router(zumen_link.build_router(check_session, _zumen_router))
 app.include_router(slack_bot.build_router(slack_bot.SlackHandler(
     fetch_cards=fetch_cards,
     get_tenant=get_tenant,

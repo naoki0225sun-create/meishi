@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <title>共有された図面</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/theme.css">
+  <link rel="stylesheet" href="/zumen.css">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { margin: 0; background: #EEF1F5; font-family: "Noto Sans JP", system-ui, sans-serif; }
+    .sh-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 18px; background: #fff; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+    .sh-title { font-size: 17px; font-weight: 700; }
+    .sh-sub { font-size: 12.5px; color: var(--ink-2); margin-top: 2px; }
+    .sh-note { background: var(--sky-soft); color: #1B3BA5; font-size: 13px; padding: 8px 18px; }
+    .sh-view { height: calc(100vh - 110px); background: #fff; }
+    .sh-foot { font-size: 11.5px; color: var(--ink-3); text-align: center; padding: 6px; }
+    .sh-dl { text-decoration: none; font-size: 13px; font-weight: 600; color: #fff; background: var(--brand); padding: 8px 14px; border-radius: 9px; }
+    .sh-err { max-width: 420px; margin: 80px auto; background: #fff; border-radius: 14px; padding: 28px; text-align: center; color: var(--ink-2); }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <div class="toast-container" id="toastContainer"></div>
+  <script src="/sales-icons.js"></script>
+  <script src="/zumen-viewer.js"></script>
+  <script>
+    const $ = id => document.getElementById(id);
+    const esc = s => s == null ? '' : String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const showToast = () => {};
+    const token = new URLSearchParams(location.search).get('t') || '';
+    ZV.pageUrl = (_f, page, size = 'view') => `/api/zumen-share/${encodeURIComponent(token)}/page/${page}?size=${size}`;
+    (async () => {
+      const r = await fetch(`/api/zumen-share/${encodeURIComponent(token)}`);
+      if (!r.ok) { $('root').innerHTML = `<div class="sh-err"><b>このリンクは開けません</b><p>期限が切れたか、送り主が取り消しています。<br>お手数ですが送り主にお問い合わせください。</p></div>`; return; }
+      const m = await r.json();
+      document.title = m.title;
+      const exp = m.expires_at.slice(0, 16).replace('T', ' ');
+      $('root').innerHTML = `<div class="sh-head"><div><div class="sh-title">${esc(m.title)} ${m.sub ? `<span class="zt-rev-big">${esc(m.sub)}</span>` : ''}</div>
+          <div class="sh-sub">${esc(m.from)} からの共有です　${exp} まで閲覧できます</div></div>
+          ${m.allow_download ? `<a class="sh-dl" href="/api/zumen-share/${encodeURIComponent(token)}/raw">原本をダウンロード</a>` : ''}</div>
+        ${m.note ? `<div class="sh-note">${esc(m.note)}</div>` : ''}
+        <div class="sh-view" id="v"></div><div class="sh-foot">このページは送り主が期限付きで共有したものです。第三者への転送はご遠慮ください</div>`;
+      zvCreate($('v'), { fileId: 0, pages: m.pages, pageFrom: 1, pageTo: m.pages, big: false, raw: false, marks: false });
+    })();
+  </script>
+</body>
+</html>

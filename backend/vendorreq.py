@@ -489,7 +489,7 @@ def build_router(check_session: Callable, current_vendor: Callable, fire: Callab
                 if not text:
                     raise HTTPException(400, "コメントを入れてください")
                 _event(c, r, "vendor", "comment", None, text)
-                info = {"what": "コメント", "detail": text[:60]}
+                info = {"what": "コメント", "detail": "", "memo": text}
             elif body.action == "report":
                 if r["kind"] != "recall" or r["status"] != "open":
                     raise HTTPException(400, "この依頼は電話待ちではありません")
@@ -510,7 +510,7 @@ def build_router(check_session: Callable, current_vendor: Callable, fire: Callab
                     c.execute("UPDATE vendor_requests SET status='done' WHERE id=?", (rid,))
                 if docs is not None:
                     create_docs(c, t, r["deal_id"], vendor, docs, _j(r["share"]), text, tel_at)
-                info = {"what": f"再テレアポの結果（{r['purpose']}）", "detail": result}
+                info = {"what": f"再テレアポの結果（{r['purpose']}）", "detail": result, "memo": text}
             elif body.action == "arrival":
                 if r["kind"] != "docs" or r["status"] != "sent":
                     raise HTTPException(400, "この資料はまだ送付済みになっていません")
@@ -525,7 +525,7 @@ def build_router(check_session: Callable, current_vendor: Callable, fire: Callab
                     c.execute("UPDATE vendor_requests SET status='requested' WHERE id=?", (rid,))
                 elif result != "担当者不在":
                     c.execute("UPDATE vendor_requests SET status='done' WHERE id=?", (rid,))
-                info = {"what": "資料の到着確認", "detail": result}
+                info = {"what": "資料の到着確認", "detail": result, "memo": text}
             else:
                 raise HTTPException(400, "操作が不正です")
             c.commit()

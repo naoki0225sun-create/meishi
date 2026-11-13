@@ -186,6 +186,7 @@ def init_db():
         sales._add_column(c, "deals", "prospect_id", "prospect_id INTEGER")    # リストから来た案件
         sales._add_column(c, "prospects", "ai_started_at", "ai_started_at TEXT")
         sales._add_column(c, "prospects", "done_at", "done_at TEXT")   # 対応が終わった会社（リストの赤い文字）
+        sales._add_column(c, "prospects", "status_override", "status_override TEXT")   # 手で動かした状況（タブへのドラッグ・まとめて）
         c.commit()
         if os.getenv("SALES_DB_WAL") == "1":   # 使うときだけ（ファイルの持ち主が違う環境では切り替えない）
             try:
@@ -836,8 +837,10 @@ def deal_info(c, tenant_id: str, ids: list) -> dict:
         f"SELECT id, title, stage, visit_grade, appo_at, vendor_id FROM deals WHERE tenant_id=? AND id IN ({q})", [tenant_id] + ids)}
 
 
-def status_of(verdict, has_deal: bool, appo: bool, last_result, records: int) -> str:
-    """一覧の「状況」（リストの色と同じ分け方）"""
+def status_of(verdict, has_deal: bool, appo: bool, last_result, records: int, override: Optional[str] = None) -> str:
+    """一覧の「状況」（リストの色と同じ分け方）。手で動かしたものはそれを優先"""
+    if override in STATUS_LABEL and verdict not in ("ng", "hold"):
+        return override
     if verdict == "ng":
         return "ng"
     if has_deal or appo:
@@ -854,8 +857,9 @@ def row_view(p, prof: str, cs: dict, deals: dict, memo: Optional[str] = None) ->
     sc, is_ai = priority(p, prof)
     d = deals.get(p["deal_id"]) if p["deal_id"] else None
     st = cs.get(p["id"]) or {}
-    return {"status": status_of(p["verdict"], bool(d), st.get("appo"), st.get("result"), st.get("n") or 0),
+    return {"status": status_of(p["verdict"], bool(d), st.get("appo"), st.get("result"), st.get("n") or 0, p["status_override"]),
             "done": bool(p["done_at"]), "last_memo": st.get("last_memo"), "last_src": st.get("last_src"),
+            "status_override": p["status_override"],
             "id": p["id"], "company": p["company"], "tel": p["tel"], "address": p["address"], "pref": p["pref"],
             "industry": p["industry"], "web": p["official_url"] or p["web"], "verdict": p["verdict"],
             "verdict_reason": p["verdict_reason"], "verdict_at": p["verdict_at"], "verdict_reason_at": p["verdict_reason_at"],
@@ -953,13 +957,13 @@ def index_stats(c, tenant_id: str) -> dict:
     for r in c.execute("""SELECT pc.prospect_id, pc.result FROM prospect_calls pc JOIN (SELECT prospect_id, MAX(id) mid
             FROM prospect_calls WHERE tenant_id=? GROUP BY prospect_id) x ON x.mid=pc.id""", (tenant_id,)):
         cs.setdefault(r["prospect_id"], {})["result"] = r["result"]
-    for r in c.execute("""SELECT r.list_id, p.id, p.verdict, p.deal_id, p.done_at FROM prospect_list_rows r
+    for r in c.execute("""SELECT r.list_id, p.id, p.verdict, p.deal_id, p.done_at, p.status_override FROM prospect_list_rows r
             JOIN prospects p ON p.id=r.prospect_id JOIN prospect_lists l ON l.id=r.list_id WHERE l.tenant_id=?""", (tenant_id,)):
         st = out.get(r["list_id"])
         if not st:
             continue
         x = cs.get(r["id"]) or {}
-        k = status_of(r["verdict"], bool(r["deal_id"]), x.get("appo"), x.get("result"), x.get("n") or 0)
+        k = status_of(r["verdict"], bool(r["deal_id"]), x.get("appo"), x.get("result"), x.get("n") or 0, r["status_override"])
         st.setdefault("status", {kk: 0 for kk in STATUS_LABEL})[k] += 1
         st["done"] = st.get("done", 0) + (1 if r["done_at"] else 0)
     for r in c.execute("""SELECT x.list_id, d.visit_grade g, COUNT(*) n FROM
@@ -1357,6 +1361,12 @@ class ProspectUpdate(BaseModel):
     done: Optional[bool] = None       # 対応が終わった（完了）／まだ
 
 
+class StatusIn(BaseModel):
+    ids: list[int] = []
+    status: Optional[str] = None
+    restore: Optional[list[dict]] = None   # 元に戻す: [{id, status_override, verdict}]
+
+
 class DoneIn(BaseModel):
     done: bool = True
     ids: Optional[list[int]] = None
@@ -1742,6 +1752,45 @@ def build_router(check_session: Callable, fetch_cards: Callable, get_tenant: Opt
                 c.commit()
         return {"ok": True}
 
+    @admin.post("/prospects/status")
+    def bulk_status(body: StatusIn, session: dict = Depends(check_session)):
+        """状況を動かす（タブへのドラッグ・まとめて）。かけない・保留は判定にも入れる（業者の記録を止める）"""
+        t = session["tenant_id"]
+        now = sales._now()
+        before = []
+        with sales._conn() as c:
+            c.execute("BEGIN IMMEDIATE")
+            if body.restore is not None:
+                for x in body.restore[:MAX_ROWS]:
+                    ov = x.get("status_override") if x.get("status_override") in STATUS_LABEL else None
+                    v = x.get("verdict") if x.get("verdict") in VERDICTS else None
+                    c.execute("""UPDATE prospects SET status_override=?, verdict=?, verdict_at=CASE WHEN verdict IS ? THEN verdict_at ELSE ? END,
+                        updated_at=? WHERE id=? AND tenant_id=?""", (ov, v, v, now, now, int(x.get("id") or 0), t))
+                c.commit()
+                return {"updated": len(body.restore)}
+            if body.status not in STATUS_LABEL:
+                raise HTTPException(400, "状況が不正です")
+            ids = list(dict.fromkeys(body.ids))[:MAX_ROWS]
+            if not ids:
+                raise HTTPException(400, "会社を選んでください")
+            for pid in ids:
+                p = c.execute("SELECT id, verdict, status_override FROM prospects WHERE id=? AND tenant_id=?", (pid, t)).fetchone()
+                if not p:
+                    continue
+                before.append({"id": pid, "status_override": p["status_override"], "verdict": p["verdict"]})
+                if body.status in ("ng", "hold"):
+                    if p["verdict"] != body.status:
+                        c.execute("""UPDATE prospects SET verdict=?, verdict_reason=NULL, verdict_at=?, verdict_reason_at=?, status_override=NULL,
+                            updated_at=? WHERE id=?""", (body.status, now, now, now, pid))
+                    else:
+                        c.execute("UPDATE prospects SET status_override=NULL WHERE id=?", (pid,))
+                else:
+                    c.execute("""UPDATE prospects SET status_override=?, verdict=CASE WHEN verdict IN ('ng','hold') THEN NULL ELSE verdict END,
+                        verdict_at=CASE WHEN verdict IN ('ng','hold') THEN ? ELSE verdict_at END, updated_at=? WHERE id=?""",
+                              (body.status, now, now, pid))
+            c.commit()
+        return {"updated": len(before), "before": before}
+
     @admin.post("/prospects/done")
     def bulk_done(body: DoneIn, session: dict = Depends(check_session)):
         """まとめて「完了」にする・外す"""
@@ -1875,7 +1924,7 @@ def build_router(check_session: Callable, fetch_cards: Callable, get_tenant: Opt
         v_ = r["verdict"] if show_v else None
         deal_vis = own_deal or bool(d and open_)
         return {"id": r["id"], "company": r["company"],
-                "status": status_of(v_, deal_vis, mine.get("appo"), mine.get("result"), mine.get("n") or 0),
+                "status": status_of(v_, deal_vis, mine.get("appo"), mine.get("result"), mine.get("n") or 0, r.get("status_override")),
                 "done": r["done"], "last_memo": mine.get("memo") or (None if other_vendor_upload else (r["memo"] or "")[:240] or None),
                 "tel": r["tel"] if open_ else raw.get("tel"), "address": r["address"] if open_ else raw.get("address"),
                 "industry": r["industry"] if open_ else raw.get("industry"), "web": r["web"] if open_ else raw.get("web"),
@@ -1994,6 +2043,38 @@ def build_router(check_session: Callable, fetch_cards: Callable, get_tenant: Opt
                 "verdict": p["verdict"] if show_v else None, "verdict_reason": p["verdict_reason"] if show_r else None,
                 "summary": ai.get("summary") if show_ai else None, "talk_hint": ai.get("talk_hint") if show_ai else None, "calls": calls,
                 "deal": ({"stage": d["stage"], "id": d["id"], "closed": d["stage"] in sales.CLOSED_STAGES} if own_deal else {"stage": "案件化済み", "id": None, "closed": d["stage"] in sales.CLOSED_STAGES} if (d and open_) else None)}
+
+    @partner.post("/prospects/status")
+    def p_status(body: StatusIn, vendor: dict = Depends(current_vendor)):
+        """業者が状況を動かす（タブへのドラッグ・まとめて）。こちらの判定（かけない・保留）は変えない"""
+        if body.status not in STATUS_LABEL and body.restore is None:
+            raise HTTPException(400, "状況が不正です")
+        now = sales._now()
+        before, skipped = [], 0
+        with sales._conn() as c:
+            if body.restore is not None:
+                for x in body.restore[:MAX_ROWS]:
+                    try:
+                        p = vendor_prospect(c, vendor, int(x.get("id") or 0))
+                    except HTTPException:
+                        continue
+                    ov = x.get("status_override") if x.get("status_override") in STATUS_LABEL else None
+                    c.execute("UPDATE prospects SET status_override=?, updated_at=? WHERE id=?", (ov, now, p["id"]))
+                c.commit()
+                return {"updated": len(body.restore)}
+            for pid in list(dict.fromkeys(body.ids))[:MAX_ROWS]:
+                try:
+                    p = vendor_prospect(c, vendor, pid)
+                except HTTPException:
+                    skipped += 1
+                    continue
+                if p["verdict"] in ("ng", "hold"):
+                    skipped += 1   # こちらが判定した会社は業者からは動かせない
+                    continue
+                before.append({"id": pid, "status_override": p["status_override"]})
+                c.execute("UPDATE prospects SET status_override=?, updated_at=? WHERE id=?", (body.status, now, pid))
+            c.commit()
+        return {"updated": len(before), "skipped": skipped, "before": before}
 
     @partner.post("/prospects/{pid}/done")
     def p_done(pid: int, body: DoneIn, vendor: dict = Depends(current_vendor)):

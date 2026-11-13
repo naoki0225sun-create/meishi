@@ -105,6 +105,9 @@ function calDayHtml() {
           ${e.kind === 'event' && e.label && e.slot ? `<span class="cal-slot">${esc(e.label)}</span>` : ''}</div>
         ${e.title ? `<div class="cal-item-title">${esc(e.title)}</div>` : ''}
         ${e.memo ? `<div class="cal-item-memo">${esc(e.memo)}</div>` : ''}
+        ${e.kind === 'appo' && e.address ? `<div class="cal-item-place">${ico('pin', 12)}<span>${esc(e.address)}</span><a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(e.address.replace(/^〒\S+\s*/, ''))}" target="_blank" rel="noopener">地図</a></div>` : ''}
+        ${e.kind === 'appo' && (e.contact || e.phone) ? `<div class="cal-item-memo">${esc([e.contact, e.phone].filter(Boolean).join('・'))}</div>` : ''}
+        ${e.kind === 'appo' && e.note ? `<div class="cal-item-note">${esc(e.note)}</div>` : ''}
       </div>
       ${e.kind === 'appo' ? `<button class="btn-link" data-open-deal="${e.deal_id}">案件を開く</button>`
         : me && me !== 'view' ? `<span class="cal-item-btns"><button class="btn-sm" data-cal-edit="${e.id}">変更</button><button class="btn-sm cal-del" data-cal-del="${e.id}">削除</button></span>` : ''}

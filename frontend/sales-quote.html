@@ -39,10 +39,12 @@
   [contenteditable]:hover { background: #fff8db; }
   [contenteditable]:focus { background: #fff3c2; }
   .empty { text-align: center; color: var(--sub); padding: 60px 0; }
+  .flash { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); background: #1d2939; color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 13px; opacity: 0; transition: .25s; pointer-events: none; }
+  .flash.on { opacity: 1; transform: translate(-50%, 0); }
   @page { size: A4; margin: 0; }
   @media print {
     body { background: #fff; }
-    .bar { display: none; }
+    .bar, .flash { display: none; }
     .sheet { margin: 0; box-shadow: none; width: auto; min-height: auto; }
     [contenteditable]:hover, [contenteditable]:focus { background: none; }
   }
@@ -52,7 +54,8 @@
 <body>
   <div class="bar">
     <button class="primary" onclick="window.print()">印刷・PDFで保存</button>
-    <span class="hint">黄色くなる所はクリックで直せます（この画面だけの変更です）</span>
+    <button id="keepBtn" title="図面タブの書類と、この案件の「書類」タブに控えを残します">控えを残す</button>
+    <span class="hint">黄色くなる所はクリックで直せます。印刷すると、直した内容のまま控えが図面タブに残ります</span>
     <button onclick="window.close()">閉じる</button>
   </div>
   <div class="sheet" id="sheet"><div class="empty">読み込み中…</div></div>
@@ -67,6 +70,28 @@ async function api(p) {
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || `HTTP ${r.status}`);
   return r.json();
 }
+// ── 控えを図面タブに残す（印刷したとき・ボタンを押したとき。同じ中身なら二重に残さない）──
+let Q = null;
+async function keepCopy(manual) {
+  if (!Q) return;
+  const no = (document.querySelector('.meta span') || {}).textContent || Q.no;
+  const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>${esc(document.title)}</title>${document.querySelector('style').outerHTML}</head>
+    <body style="background:#fff"><div class="sheet" style="margin:0 auto;box-shadow:none">${$('sheet').innerHTML}</div></body></html>`;
+  try {
+    const r = await fetch('/api/zumen/quote-doc', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deal_id: Q.id, doc_no: no.trim(), doc_date: Q.date, amount: Q.sub || null, title: Q.title, lines: Q.lines, html }) });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || `HTTP ${r.status}`);
+    const d = await r.json();
+    if (manual) flash(d.duplicate ? '同じ内容の控えがすでにあります' : '控えを残しました。案件の「書類」タブで見られます');
+  } catch (e) { if (manual) flash(`控えを残せませんでした（${e.message}）`); }
+}
+function flash(t) {
+  let el = document.getElementById('flash');
+  if (!el) { el = document.createElement('div'); el.id = 'flash'; el.className = 'flash'; document.body.appendChild(el); }
+  el.textContent = t; el.classList.add('on'); setTimeout(() => el.classList.remove('on'), 3500);
+}
+window.addEventListener('beforeprint', () => keepCopy(false));
+document.addEventListener('DOMContentLoaded', () => { const b = document.getElementById('keepBtn'); if (b) b.onclick = () => keepCopy(true); });
 (async () => {
   const id = Number(new URLSearchParams(location.search).get('deal'));
   if (!id) { $('sheet').innerHTML = '<div class="empty">案件が指定されていません</div>'; return; }
@@ -96,6 +121,8 @@ async function api(p) {
       : `<tr><td class="num">1</td><td contenteditable>${esc(d.title)}</td><td contenteditable></td><td class="num" contenteditable>1</td>
          <td class="num" contenteditable>${d.amount ? Number(d.amount).toLocaleString('ja-JP') : ''}</td><td class="num">${d.amount ? Number(d.amount).toLocaleString('ja-JP') : ''}</td></tr>`;
     document.title = `御見積書_${company}_${no}`;
+    Q = { id, no, sub, title: d.title, lines: items.map(x => ({ name: x.name, material: x.material, thickness: x.thickness, qty: x.qty,
+      unit_price: x.unit_price, amount: x.subtotal })), date: `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}` };
     $('sheet').innerHTML = `
       <h1>御見積書</h1>
       <div class="top">

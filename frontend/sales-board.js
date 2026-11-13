@@ -96,8 +96,30 @@ function renderBoard() {
     </div>`;
   }).join('');
   $('listPane').innerHTML = `<div class="board">${cols}</div>
-    <div class="board-hint">カードをドラッグして段階を変えられます。クリックで詳細を開きます</div>`;
+    <div class="board-hint">カードをドラッグして段階を変えられます。左上のチェックで選ぶと、まとめて動かせます</div>`;
   bindBoard();
+  bindPicks($('listPane'));
+  drawBulkBar();
+  boardThumbs(list.map(d => d.id));
+}
+
+// 図面タブに紐づく図面の縮小画像をカードに出す（図面がない案件には何も出さない）
+const ZTHUMBS = {};
+async function boardThumbs(ids) {
+  const need = ids.filter(id => !(id in ZTHUMBS));
+  if (need.length) {
+    try {
+      const r = await fetch(`/api/zumen/deal-thumbs?ids=${need.slice(0, 300).join(',')}`, { credentials: 'include' });
+      const d = r.ok ? await r.json() : { thumbs: {} };
+      need.forEach(id => { ZTHUMBS[id] = d.thumbs[String(id)] || null; });
+    } catch { return; }
+  }
+  document.querySelectorAll('.board-card[data-id]').forEach(el => {
+    const t = ZTHUMBS[Number(el.dataset.id)];
+    if (!t || el.querySelector('.bc-thumb')) return;
+    el.insertAdjacentHTML('beforeend', `<a class="bc-thumb" href="/zumen.html?view=site&deal=${el.dataset.id}" title="${esc(t.drawing_no)}（${esc(t.rev || '初版')}）を開く" onclick="event.stopPropagation()" draggable="false">
+      <img src="/api/zumen/files/${t.file_id}/page/${t.page_no}?size=thumb" alt="" loading="lazy" draggable="false"><span>${esc(t.drawing_no)} ${esc(t.rev || '')}${t.count > 1 ? `　他${t.count - 1}枚` : ''}</span></a>`);
+  });
 }
 
 function boardCard(d) {
@@ -110,7 +132,8 @@ function boardCard(d) {
     const late = d.overdue ? 'is-late' : d.due_today ? 'is-today' : '';
     due = `<span class="bc-due ${late}">${ico('clock', 12)} ${esc(d.due_today ? '今日' : fmtDate(d.next_action_due))}</span>`;
   }
-  return `<div class="board-card ${d.id === S.selectedId ? 'is-active' : ''}" draggable="true" data-id="${d.id}">
+  return `<div class="board-card ${d.id === S.selectedId ? 'is-active' : ''} ${S.bulk.has(d.id) ? 'is-picked' : ''}" draggable="true" data-id="${d.id}">
+    ${pickBoxHtml(d)}
     <div class="bc-company">${esc(company)}${person ? ` <span>${esc(person)}</span>` : ''}</div>
     <div class="bc-title"><span class="deal-no">#${d.id}</span> ${esc(d.title)}</div>
     ${routeHtml(d)}
@@ -130,6 +153,7 @@ function bindBoard() {
       el.classList.add('is-dragging');
       e.dataTransfer.effectAllowed = 'move';
       try { e.dataTransfer.setData('text/plain', String(dragId)); } catch { /* 一部ブラウザ */ }
+      dragLabel(e, S.bulk.has(dragId) ? S.bulk.size : 1);
     };
     el.ondragend = () => { el.classList.remove('is-dragging'); root.querySelectorAll('.board-col').forEach(c => c.classList.remove('is-over')); };
   });
@@ -140,7 +164,8 @@ function bindBoard() {
       e.preventDefault();
       col.classList.remove('is-over');
       const id = dragId || Number(e.dataTransfer.getData('text/plain'));
-      if (id) moveStage(id, col.dataset.stage);
+      if (id && S.bulk.has(id) && S.bulk.size > 1) bulkMove([...S.bulk], col.dataset.stage);
+      else if (id) moveStage(id, col.dataset.stage);
     };
   });
 }
@@ -150,14 +175,6 @@ async function moveStage(id, stage) {
   const d = S.allDeals.find(x => x.id === id);
   if (!d || d.stage === stage) return;
   const pl = pipeOf(d);
-  if (stage === pl.lost && pl.reason_required) {
-    // 失注は理由が要るので詳細で選んでもらう
-    await selectDeal(id);
-    S.showLostBox = true;
-    renderDetail();
-    showToast('失注の理由を選んでください', { type: 'info', duration: 2500 });
-    return;
-  }
   const prev = { stage: d.stage, lost_reason: d.lost_reason, lost_detail: d.lost_detail, max_stage_idx: d.max_stage_idx || 0 };
   d.stage = stage; d.is_open = !(stage === pl.won || stage === pl.lost);   // 先に画面を動かす
   renderFilters(); renderList();
@@ -168,6 +185,7 @@ async function moveStage(id, stage) {
       type: 'success', duration: 5000,
       action: { label: '元に戻す', onClick: () => undoStage(id, prev) },
     });
+    if (stage === pl.lost && pl.reason_required && S.selectedId === id) { S.showLostBox = true; renderDetail(); }
   } catch (e) {
     showToast(e.message, { type: 'error', title: '段階を変えられませんでした' });
     await loadDeals();

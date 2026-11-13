@@ -3,8 +3,11 @@
   ・アカウントは分けず、名前を選ぶだけ（初めての人は名前を入れる・見るだけも可）
   ・日を選んで「午前／午後前半／午後後半／終日／時間を入力」で予定を入れる
   ・案件のアポ（アポ日時）も自動で載る
-  ・テレアポ業者は「予定がある時間帯」と名前だけ見られる（件名・メモ・お客様名は見えない）
+  ・テレアポ業者は「予定がある時間帯」と名前を見られる。自分が取ったアポは会社名・住所まで、ほかのアポは場所の目安（市区町村）だけ
 """
+import json
+import re
+import sqlite3
 from datetime import date, datetime, timedelta
 from typing import Callable, Optional
 
@@ -69,8 +72,61 @@ def people(c, tenant_id: str) -> list:
     return [dict(r) for r in c.execute("SELECT id, name, color FROM cal_people WHERE tenant_id=? ORDER BY id", (tenant_id,))]
 
 
-def busy(c, tenant_id: str, frm: str, to: str, detail: bool) -> list:
-    """予定とアポ。detail=False（業者向け）は件名・メモ・お客様を出さない"""
+_PREF = r"(?:東京都|北海道|(?:京都|大阪)府|[^\s都道府県]{2,3}県)"
+
+
+def area_of(addr: Optional[str]) -> Optional[str]:
+    """住所 → 市区町村まで（大阪府摂津市鳥飼本町2-12 → 大阪府摂津市）。ほかの業者・自社のアポは場所の目安だけ出す"""
+    if not addr:
+        return None
+    a = re.sub(r"^〒?\s*\d{3}-?\d{4}\s*", "", str(addr)).strip()
+    m = re.match(rf"^({_PREF})?\s*(.+?市.+?区|.+?郡.+?[町村]|.+?[市区町村])", a)
+    if not m:
+        return None
+    return ((m.group(1) or "") + m.group(2))[:30]
+
+
+def _deal_place(c, d) -> dict:
+    """アポ先の会社の住所・相手・電話（業者が入れた情報 → リストの情報の順）"""
+    try:
+        ct = json.loads(d["vendor_contact"] or "{}") or {}
+    except (TypeError, ValueError):
+        ct = {}
+    addr = ct.get("address")
+    tel = ct.get("phone") or d["phone_snapshot"]
+    if not addr or not tel:
+        try:
+            p = c.execute("SELECT address, tel FROM prospects WHERE deal_id=? ORDER BY id DESC LIMIT 1", (d["id"],)).fetchone()
+        except sqlite3.OperationalError:
+            p = None
+        if p:
+            addr, tel = addr or p["address"], tel or p["tel"]
+    zip_ = ct.get("zip")
+    return {"address": " ".join(x for x in (("〒" + zip_.lstrip("〒")) if zip_ else None, addr) if x) or None, "area": area_of(addr),
+            "contact": " ".join(x for x in (ct.get("department"), ct.get("contact") or d["contact_snapshot"]) if x) or None,
+            "phone": tel, "company": d["company_snapshot"]}
+
+
+_CT_LINE = re.compile(r"^\s*(相手|担当|部署・役職|部署|電話|メール|携帯|FAX|住所|郵便番号|業種|公式サイト)\s*[:：]")
+
+
+def _deal_memo(c, deal_id: int, vendor_id: Optional[int] = None) -> Optional[str]:
+    """アポ先の最新のメモ（業者向けはその業者が書いた記録と、業者に見せている記録だけ）"""
+    q = "SELECT body FROM activities WHERE deal_id=? AND body IS NOT NULL AND TRIM(body)<>''"
+    args = [deal_id]
+    if vendor_id is not None:
+        q += " AND (vendor_id=? OR vendor_visible=1)"
+        args.append(vendor_id)
+    row = c.execute(q + " ORDER BY occurred_at DESC, id DESC LIMIT 1", args).fetchone()
+    if not row:
+        return None
+    body = "\n".join(x for x in row["body"].splitlines() if not _CT_LINE.match(x)).strip()
+    return (body[:400] + "…") if len(body) > 400 else (body or None)
+
+
+def busy(c, tenant_id: str, frm: str, to: str, detail: bool, vendor_id: Optional[int] = None) -> list:
+    """予定とアポ。detail=False（業者向け）は件名・メモ・お客様を出さない。
+    業者向けでも、その業者が取ったアポは会社名・住所・相手まで、ほかのアポは場所の目安（市区町村）だけ出す"""
     ppl = {p["id"]: p for p in people(c, tenant_id)}
     members_color = {p["name"]: p["color"] for p in ppl.values()}
     out = []
@@ -85,7 +141,8 @@ def busy(c, tenant_id: str, frm: str, to: str, detail: bool) -> list:
             item.update(id=e["id"], person_id=e["person_id"], slot=e["slot"], title=e["title"], memo=e["memo"])
         out.append(item)
     closed = sorted(sales.CLOSED_STAGES)
-    for d in c.execute(f"""SELECT id, title, company_snapshot, owner, appo_at FROM deals WHERE tenant_id=? AND appo_at IS NOT NULL
+    for d in c.execute(f"""SELECT id, title, company_snapshot, contact_snapshot, phone_snapshot, vendor_contact, vendor_id, owner, appo_at
+            FROM deals WHERE tenant_id=? AND appo_at IS NOT NULL
             AND substr(appo_at, 1, 10) BETWEEN ? AND ? AND stage NOT IN ({','.join('?' * len(closed))})""",
                        [tenant_id, frm, to] + closed):
         ap = d["appo_at"]
@@ -98,8 +155,14 @@ def busy(c, tenant_id: str, frm: str, to: str, detail: bool) -> list:
         who = d["owner"] or ""
         item = {"kind": "appo", "day": ap[:10], "start": s, "end": e_, "label": label, "all_day": len(ap) < 16,
                 "person": who or "担当未定", "color": members_color.get(who, "#475569")}
+        pl = _deal_place(c, d)
         if detail:
-            item.update(deal_id=d["id"], title=f"{d['company_snapshot'] or ''} {d['title'] or ''}".strip())
+            item.update(deal_id=d["id"], title=f"{d['company_snapshot'] or ''} {d['title'] or ''}".strip(), **pl,
+                        note=_deal_memo(c, d["id"]))
+        elif vendor_id is not None and d["vendor_id"] == vendor_id:
+            item.update(mine=True, deal_id=d["id"], **pl, note=_deal_memo(c, d["id"], vendor_id))
+        else:
+            item.update(area=pl["area"])
         out.append(item)
     out.sort(key=lambda x: (x["day"], x["start"], x["end"]))
     return out

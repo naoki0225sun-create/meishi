@@ -19,3 +19,7 @@ backend/tenants.yaml
 
 # 機能追加前のDBバックアップ
 backup-before-sales-*
+
+# 図面のデータとバックアップは git に入れない
+files/
+backup-zumen/

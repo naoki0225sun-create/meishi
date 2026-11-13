@@ -455,3 +455,73 @@ body.app-page .lst-share:not(.is-private) { background: var(--teal-soft); color:
 .cal-edit-row label { font-size: 12px; font-weight: 700; color: var(--ink-2); }
 .cal-edit-btns { display: flex; gap: 6px; align-items: center; }
 .cal-edit-btns > span { flex: 1; }
+
+/* ── まとめて動かす（チェック・下のバー・ドラッグ） ── */
+.pick { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 26px; height: 26px; margin: -3px 2px -3px -4px; border-radius: 6px; cursor: pointer; }
+.pick:hover { background: var(--sky-soft); }
+.pick input { width: 16px; height: 16px; cursor: pointer; margin: 0; accent-color: var(--brand); }
+.deal-row-top { align-items: center; }
+.deal-row.is-picked { background: var(--sky-soft) !important; box-shadow: inset 3px 0 0 var(--brand); }
+.board-card { position: relative; }
+.board-card .pick { position: absolute; top: 6px; right: 6px; margin: 0; background: #fff; opacity: 0; transition: opacity .12s; }
+.board-card:hover .pick, .board-card.is-picked .pick, body.has-bulk .board-card .pick { opacity: 1; }
+@media (hover: none) { .board-card .pick { opacity: 1; } }
+.board-card.is-picked { outline: 2px solid var(--brand); outline-offset: -1px; }
+.bc-company { padding-right: 24px; }
+.deal-row[draggable="true"] { cursor: pointer; }
+.deal-row.is-dragging, .board-card.is-dragging { opacity: .45; }
+body.is-deal-drag .chip[data-filter] { transition: transform .1s; }
+body.is-deal-drag .chip-scroll .chip:not([data-filter="action"]):not([data-filter="open"]):not([data-filter="all"]) { border-style: dashed; border-color: var(--brand); }
+.chip.is-drop { background: var(--brand) !important; color: #fff !important; border-color: var(--brand) !important; transform: scale(1.06); }
+.chip.is-drop .chip-count { background: rgba(255,255,255,.25); color: #fff; }
+.drag-ghost { position: fixed; top: -100px; left: -100px; background: var(--ink); color: #fff; font-size: 13px; font-weight: 700; padding: 6px 12px; border-radius: 8px; }
+.bulk-bar { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 60; display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap;
+  background: var(--ink); color: #fff; border-radius: 14px; padding: 10px 14px; box-shadow: 0 10px 30px rgba(15, 23, 42, .28); max-width: calc(100vw - 32px); }
+.bulk-n { font-size: 13.5px; white-space: nowrap; }
+.bulk-acts { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.bulk-bar .btn-sm { background: #fff; border-color: #fff; color: var(--ink); font-weight: 700; }
+.bulk-bar .bulk-hold { color: #15803D; } .bulk-bar .bulk-lost { color: #B91C1C; }
+.bulk-sel { width: auto; min-width: 140px; }
+.bulk-sub { display: flex; gap: 12px; }
+.bulk-bar .link-btn { color: #CBD5E1; font-size: 12.5px; white-space: nowrap; }
+.bulk-bar .link-btn:hover { color: #fff; }
+body.has-bulk .pane-list { padding-bottom: 90px; }
+@media (max-width: 860px) {
+  .bulk-bar { bottom: 74px; left: 12px; right: 12px; transform: none; max-width: none; padding: 10px 12px; gap: 8px; }
+  .bulk-acts { width: 100%; } .bulk-acts .btn-sm { flex: 1; } .bulk-sel { flex: 1 1 100%; }
+  body.has-bulk .pane-list { padding-bottom: 190px; }
+}
+.td-btns { display: flex; gap: 6px; align-items: center; }
+.td-more { padding: 4px 9px; font-weight: 800; letter-spacing: .05em; }
+.stage-menu { position: fixed; z-index: 80; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 32px rgba(15, 23, 42, .18);
+  padding: 6px; min-width: 180px; max-height: 70vh; overflow: auto; display: flex; flex-direction: column; }
+.stage-menu button { appearance: none; border: 0; background: none; font: inherit; font-size: 13px; text-align: left; padding: 7px 10px; border-radius: 8px; cursor: pointer; color: var(--ink); }
+.stage-menu button:hover { background: var(--canvas); }
+.stage-menu .is-hold { color: #15803D; font-weight: 700; } .stage-menu .is-lost { color: #B91C1C; font-weight: 700; }
+.stage-menu-sep { height: 1px; background: var(--line); margin: 4px 2px; }
+.stage-menu-t { font-size: 11px; color: var(--ink-3); padding: 4px 10px 2px; font-weight: 700; }
+.vinfo { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px 12px; margin: 0; font-size: 13px; }
+.vinfo dt { color: var(--ink-3); font-size: 12px; white-space: nowrap; }
+.vinfo dd { margin: 0; overflow-wrap: anywhere; }
+.vinfo-map { font-size: 12px; margin-left: 4px; }
+/* 失注・保留を選んでいるときも見えるように */
+body.app-page .stage-step.is-side.is-current { background: var(--brand); color: #fff; }
+body.app-page .stage-step.is-side.is-current[data-stage="失注"], body.app-page .stage-step.is-side.is-current[data-stage="中止"] { background: #DC2626; }
+body.app-page .stage-step.is-side.is-current[data-stage="保留"] { background: #16A34A; }
+body.app-page .stage-step.is-side.is-current[data-stage="見送り"] { background: #64748B; }
+body.app-page .stage-step.is-side[data-stage="失注"]:not(.is-current) { color: #B91C1C; }
+body.app-page .stage-step.is-side[data-stage="保留"]:not(.is-current) { color: #15803D; }
+.lost-box > summary { cursor: pointer; list-style: none; }
+.lost-box > summary::-webkit-details-marker { display: none; }
+.lost-box:not([open]) { padding-bottom: 10px; }
+.deal-title .deal-tt { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-item-place { display: flex; gap: 5px; align-items: flex-start; font-size: 12px; color: var(--ink-2); margin-top: 3px; }
+.cal-item-place .ic { margin-top: 2px; flex: none; }
+.cal-item-place span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.cal-item-place a { white-space: nowrap; }
+.cal-item-note { margin-top: 5px; font-size: 12px; line-height: 1.6; color: var(--ink); background: var(--canvas); border-radius: 8px; padding: 6px 8px; white-space: pre-line; overflow-wrap: anywhere; max-height: 9.6em; overflow: auto; }
+
+/* 名刺の会社見出し：図面タブの件数（phase30） */
+.company-zumen { flex-shrink: 0; font-size: 10.5px; font-weight: 600; color: var(--blue-600, #2556E8); background: var(--blue-50, #EEF3FF);
+  border-radius: 99px; padding: 1px 8px; text-decoration: none; white-space: nowrap; margin-right: 4px; }
+.company-zumen:hover { background: var(--blue-100, #DCE6FF); }
