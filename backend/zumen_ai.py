@@ -50,7 +50,19 @@ PROMPT = """あなたは製造業（板金・制御盤・キュービクル）�
 - 年が和暦なら西暦に直す。年が書かれていなければ今日に近い年にする。
 - 金額のカンマや「円」「￥」は外して整数にする。消費税は含めない。
 - 読めない項目は空文字か null。confidence は自信の度合い。
-- JSON以外は書かない。"""
+- JSON以外は書かない。
+
+書類の読み方（板金・盤の受注生産でよく届く形）:
+- 注文書・注文変更書：宛名欄（「御中」「殿」が付いた側）が自社なら、発行元（「会社名」欄・社印・右上の会社名）が counterparty。自社名を counterparty にしない。
+  「注番」「注文番号」「発注番号」「注文No.」は doc_no。「依頼日」「発行日」「注文日」は doc_date。「希望納期」「納期」「納入日」は due_on。「件名」「工事名」は title。
+  明細は品名・形式（寸法 W×H×D など）・定格・数量・単価を lines に入れる（形式・寸法は name に続けて書く）。
+- 注文書のあとに続く「鈑金製作図」「製作仕様書」「仕様書」などの表紙と、部品図・組立図は、その注文の図面一式。1つの document（kind は「図面」）にまとめ、ページごとの図面を drawings に入れる。
+  この document の ref_no には、表紙や表題欄に書かれた注文番号（なければ前の注文書の doc_no）を入れ、counterparty は注文書の発行元と同じにする。
+- 製作仕様書の表紙：件名・名称・製作数・材質（フレーム・外板・扉など）・塗装色を読み、title に「名称（件名）」を入れる。drawings にはこのページも1件として、name に名称を入れる。
+- 部品図：右下の表題欄から図番・図名（品名）・材質・板厚（t2.3 なら thickness は 2.3）・数量・表面処理（三価クロメートなど）を読む。図番の欄が空なら drawing_no は空にして、name に図名を入れる。
+- 図面の表題欄にある「〇〇 殿」「〇〇 様」は最終のお客様や現場の名前なので counterparty にしない（title に入れる）。図面の counterparty は、図面を送ってきた会社（注文書の発行元）。
+- ページの左右・上下の余白に縦書きで小さく書かれた図番や品名も読む。拡大した画像（下部・上部）があるときは、細かい字はそちらで読む。
+- 1枚の注文書を複数の document に分けない。図面のページを1枚ずつ別の document にしない。"""
 
 
 def ai_available() -> bool:
@@ -64,9 +76,36 @@ def main_model() -> str:
 def call_ai(content: list, max_tokens: int = 8000, model: str = None) -> str:
     import anthropic
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-    msg = client.messages.create(model=model or main_model(),
-                                 max_tokens=max_tokens, messages=[{"role": "user", "content": content}])
+    kw = dict(model=model or main_model(), max_tokens=max_tokens, messages=[{"role": "user", "content": content}])
+    # 長い返答（ページの多い図面一式）でも時間切れにならないよう、少しずつ受け取る
+    if hasattr(client.messages, "stream"):
+        with client.messages.stream(**kw) as st:
+            msg = st.get_final_message()
+    else:
+        msg = client.messages.create(**kw)
+    if getattr(msg, "stop_reason", "") == "max_tokens":
+        logging.getLogger("zumen_ai").warning("AIの返答が長さの上限で切れました（書けていた書類だけを使います）")
     return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+
+
+def _lower_crop(jpg: bytes) -> Optional[bytes]:
+    """ページの下35%を切り出して拡大する（表題欄の図番・材質・数量や、注文書の希望納期は小さな字で下にあることが多い）"""
+    try:
+        import io
+        from PIL import Image
+        im = Image.open(io.BytesIO(jpg)).convert("RGB")
+        w, h = im.size
+        if h < 400:
+            return None
+        crop = im.crop((0, int(h * 0.65), w, h))
+        scale = min(1568 / crop.width, 3.0)
+        if scale > 1.05:
+            crop = crop.resize((int(crop.width * scale), int(crop.height * scale)), Image.LANCZOS)
+        buf = io.BytesIO()
+        crop.save(buf, "JPEG", quality=85)
+        return buf.getvalue()
+    except Exception:
+        return None
 
 
 def build_content(own: str, images: list, texts: list, filename: str = "", extra: str = "") -> list:
@@ -74,9 +113,17 @@ def build_content(own: str, images: list, texts: list, filename: str = "", extra
     head = PROMPT.format(own=own or "（不明）", today=date.today().isoformat(), extra=extra)
     content = [{"type": "text", "text": head + (f"\n\nファイル名: {filename}" if filename else "")}]
     tmap = dict(texts)
-    for no, jpg in images[:MAX_PAGES]:
+    for item in images[:MAX_PAGES]:
+        no, jpg = item[0], item[1]
+        crops = item[2] if len(item) > 2 else None
         content.append({"type": "text", "text": f"--- {no}ページ目 ---" + (f"\nPDFの文字:\n{tmap[no][:4000]}" if tmap.get(no) else "")})
         content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(jpg).decode()}})
+        if crops is None:   # 原本から拡大画像を作れなかったときは、表示用の画像の下部を使う
+            low = _lower_crop(jpg)
+            crops = [("下部＝表題欄・納期欄", low)] if low else []
+        for label, cj in crops:
+            content.append({"type": "text", "text": f"（{no}ページ目の{label}を拡大したもの）"})
+            content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(cj).decode()}})
     if len(images) > MAX_PAGES:
         content.append({"type": "text", "text": f"（{len(images)}ページのうち先頭{MAX_PAGES}ページだけを渡しています）"})
     return content
@@ -88,10 +135,25 @@ def parse_json(text: str) -> dict:
     try:
         return json.loads(t)
     except ValueError:
-        m = re.search(r"\{.*\}", t, re.S)
-        if not m:
-            raise ValueError("AIの返答を読み取れませんでした")
-        return json.loads(m.group(0))
+        pass
+    m = re.search(r"\{.*\}", t, re.S)
+    if m:
+        try:
+            return json.loads(m.group(0))
+        except ValueError:
+            pass
+    # 返答が途中で切れたとき：最後まで書けている書類だけを拾う
+    start = t.find("[")
+    if start >= 0:
+        for i in range(len(t) - 1, start, -1):
+            if t[i] == "}":
+                try:
+                    docs = json.loads(t[start:i + 1] + "]")
+                    if isinstance(docs, list) and docs:
+                        return {"documents": [x for x in docs if isinstance(x, dict)]}
+                except ValueError:
+                    continue
+    raise ValueError("AIの返答を読み取れませんでした")
 
 
 def _s(v, n=200) -> str:
@@ -121,9 +183,31 @@ def _num(v) -> Optional[float]:
         return None
 
 
+HONORIFIC = re.compile(r"\s*(御中|殿|様|さま|宛|行)\s*$")
+NO_LABEL = re.compile(r"^\s*(注番|注文番号|注文No\.?|発注番号|発注No\.?|見積番号|見積No\.?|請求番号|伝票番号|図番|No\.?|NO\.?|№|#)\s*[:：.]?\s*", re.I)
+
+
+def _party(v) -> str:
+    t = _s(v, 120)
+    for _ in range(2):
+        t = HONORIFIC.sub("", t).strip()
+    return t
+
+
+def _no(v, n=60) -> str:
+    t = _s(v, n)
+    for _ in range(2):
+        t = NO_LABEL.sub("", t).strip()
+    return t
+
+
 def _date(v) -> Optional[str]:
     t = _s(v, 20)
-    m = re.match(r"(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})", t)
+    w = re.match(r"(?:令和|R)\s*(\d{1,2}|元)\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})", t)
+    if w:   # 和暦（令和）のまま返ってきたとき
+        y = 1 if w.group(1) == "元" else int(w.group(1))
+        t = f"{2018 + y}-{w.group(2)}-{w.group(3)}"
+    m = re.match(r"(\d{4})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})", t)
     if not m:
         return None
     try:
@@ -188,7 +272,7 @@ def clean_doc(d: dict, page_count: int, kinds: list = None) -> dict:
     conf = d.get("confidence") if isinstance(d.get("confidence"), dict) else {}
     return {
         "pages": pages, "kind": kind, "direction": direction,
-        "counterparty": _s(d.get("counterparty"), 120), "doc_no": _s(d.get("doc_no"), 60), "ref_no": _s(d.get("ref_no"), 60),
+        "counterparty": _party(d.get("counterparty")), "doc_no": _no(d.get("doc_no")), "ref_no": _no(d.get("ref_no")),
         "doc_date": _date(d.get("doc_date")), "amount": amount, "due_on": due, "title": _s(d.get("title"), 60),
         "lines": lines, "drawings": drawings,
         "confidence": {k: _conf(conf.get(k, 0.6)) for k in ("kind", "counterparty", "doc_no", "amount", "due_on", "drawing_no", "rev")},
@@ -201,7 +285,7 @@ def clean(data: dict, page_count: int, kinds: list = None) -> list:
     if not isinstance(docs, list) or not docs:
         docs = [data] if isinstance(data, dict) and data.get("kind") else []
     out = [clean_doc(d, page_count, kinds) for d in docs if isinstance(d, dict)]
-    return out[:20]
+    return out[:60]
 
 
 def _shaky(docs: list) -> bool:
@@ -216,6 +300,110 @@ def _shaky(docs: list) -> bool:
 
 
 STATS = {"fast": 0, "escalated": 0}
+
+
+ORDER_KINDS = ("注文書", "注文変更書")
+SET_KINDS = ("図面", "仕様書", "承認図", "その他")
+
+
+def _norm(s: str) -> str:
+    try:
+        import zumen_match
+        return zumen_match.norm_company(s or "")
+    except Exception:
+        return re.sub(r"\s|株式会社|有限会社|\(株\)|\(有\)|（株）|（有）", "", s or "")
+
+
+def consolidate(docs: list, own: str = "") -> list:
+    """1つのファイルの中での書類同士のつながりを整える
+    - 自社名を取引先として読んでしまったものは空にする
+    - 注文書のあとに続く図面一式には、注文書の取引先・注文番号・納期・件名を引き継ぐ
+    - 同じ注文の図面が区切りで分かれていたら1つにまとめる
+    - 図番の欄が空の部品図には「注文番号-図名」を仮の図番として付ける"""
+    if not docs:
+        return docs
+    on = _norm(own)
+    for d in docs:
+        if on and d.get("counterparty") and _norm(d["counterparty"]) == on:
+            d["counterparty"] = ""
+    docs.sort(key=lambda d: min(d["pages"]))
+    order = None
+    for d in docs:
+        if d["kind"] in ORDER_KINDS:
+            order = d
+            continue
+        if order and d["kind"] in SET_KINDS:
+            # 同じファイルで注文書のあとに続く図面一式は、注文書と同じ会社から届いたもの
+            # （表題欄の「〇〇 殿」＝最終のお客様を取引先として読んでしまうのを防ぐ）
+            if order.get("counterparty") and _norm(d.get("counterparty")) != _norm(order["counterparty"]):
+                if d.get("counterparty") and not d.get("title"):
+                    d["title"] = d["counterparty"][:60]
+                d["counterparty"] = order["counterparty"]
+            if not d.get("ref_no") and order.get("doc_no"):
+                d["ref_no"] = order["doc_no"]
+            if not d.get("due_on"):
+                d["due_on"] = order.get("due_on")
+            if not d.get("title"):
+                d["title"] = order.get("title") or ""
+            if d["kind"] == "その他" and d.get("drawings"):
+                d["kind"] = "図面"
+    out = []
+    for d in docs:
+        prev = out[-1] if out else None
+        same_set = (prev and prev["kind"] in SET_KINDS and d["kind"] in SET_KINDS and "図面" in (prev["kind"], d["kind"])
+                    and (prev.get("ref_no") or "") == (d.get("ref_no") or "")
+                    and _norm(prev.get("counterparty")) == _norm(d.get("counterparty")) and (prev.get("ref_no") or prev.get("counterparty")))
+        dup = prev and prev["kind"] == d["kind"] and set(d["pages"]) & set(prev["pages"])   # 同じページを2回読んだ
+        if same_set or dup:
+            if prev["kind"] != d["kind"]:
+                if not any(x.get("page") in d["pages"] for x in prev["drawings"]) and d["kind"] != "図面" and not d["drawings"]:
+                    prev["drawings"].append({"page": min(d["pages"]), "drawing_no": "", "rev": "", "name": d.get("title") or d["kind"], "material": "",
+                                             "thickness": "", "surface": "", "change_note": "", "parts": []})
+                if prev["kind"] != "図面" and d["kind"] == "図面":
+                    if not prev["drawings"]:
+                        prev["drawings"].append({"page": min(prev["pages"]), "drawing_no": "", "rev": "", "name": prev.get("title") or prev["kind"],
+                                                 "material": "", "thickness": "", "surface": "", "change_note": "", "parts": []})
+                    prev["kind"] = "図面"
+            if dup:
+                have = {(x.get("page"), x.get("drawing_no"), x.get("name")) for x in prev["drawings"]}
+                d["drawings"] = [x for x in d["drawings"] if (x.get("page"), x.get("drawing_no"), x.get("name")) not in have]
+            prev["pages"] = sorted(set(prev["pages"] + d["pages"]))
+            prev["drawings"] += d["drawings"]
+            prev["lines"] += d["lines"]
+            prev["questions"] = (prev["questions"] + [q for q in d["questions"] if q not in prev["questions"]])[:5]
+            for k in ("doc_no", "doc_date", "due_on", "title"):
+                prev[k] = prev.get(k) or d.get(k)
+            continue
+        out.append(d)
+    for d in out:
+        if d["kind"] != "図面":
+            continue
+        filled = 0
+        seen = set()
+        for dw in d["drawings"]:
+            if not dw.get("drawing_no") and dw.get("name") and d.get("ref_no"):
+                base = f"{d['ref_no']}-{dw['name']}"[:80]
+                no, k = base, 2
+                while no in seen:
+                    no, k = f"{base}-{k}", k + 1
+                dw["drawing_no"] = no
+                filled += 1
+            seen.add(dw.get("drawing_no"))
+        if filled:
+            d["confidence"]["drawing_no"] = min(d["confidence"].get("drawing_no", 0.6), 0.6)
+            q = f"図番の欄が空の図面{filled}枚に、「注文番号-図名」を仮の図番として付けました。社内で使う図番があれば直してください"
+            if q not in d["questions"]:
+                d["questions"] = (d["questions"] + [q])[:5]
+    return out
+
+
+def _context_of(docs: list) -> str:
+    lines = []
+    for d in docs:
+        if d["kind"] in ORDER_KINDS or d.get("doc_no") or d.get("ref_no"):
+            lines.append(f"- {min(d['pages'])}〜{max(d['pages'])}ページ：{d['kind']}　番号 {d.get('doc_no') or '—'}　参照 {d.get('ref_no') or '—'}"
+                         f"　取引先 {d.get('counterparty') or '—'}　件名 {d.get('title') or '—'}　納期 {d.get('due_on') or '—'}")
+    return ("\nこれより前のページで読み取った書類（続きのページはこれらの続きのことが多い）:\n" + "\n".join(lines[-6:])) if lines else ""
 
 
 CHUNK_PAGES = int(os.getenv("ZUMEN_AI_CHUNK_PAGES", "10"))
@@ -233,8 +421,11 @@ def _read_once(content: list, page_count: int, kinds: list = None) -> list:
             STATS["escalated"] += 1
         except Exception:
             logging.getLogger("zumen_ai").exception("安いモデルでの読み取りに失敗。上位モデルで読みます")
-    raw = call_ai(content, max_tokens=16000)
-    return clean(parse_json(raw), page_count, kinds)
+    try:
+        return clean(parse_json(call_ai(content, max_tokens=16000)), page_count, kinds)
+    except ValueError:   # 返答の形が崩れたときは1回だけ読み直す
+        logging.getLogger("zumen_ai").warning("AIの返答を読み取れなかったので読み直します")
+        return clean(parse_json(call_ai(content, max_tokens=16000)), page_count, kinds)
 
 
 def _same_doc(a: dict, b: dict) -> bool:
@@ -251,15 +442,15 @@ def read_document(own: str, images: list, texts: list, filename: str = "", extra
     ページが多いファイル（注文書と製作図・部品図をまとめてスキャンしたもの等）は CHUNK_PAGES ずつに分けて読み、つなぎ直す"""
     n = len(images)
     if n <= CHUNK_PAGES:
-        return _read_once(build_content(own, images, texts, filename, extra), n, kinds)
+        return consolidate(_read_once(build_content(own, images, texts, filename, extra), n, kinds), own)
     out = []
     tmap = dict(texts)
     for i in range(0, n, CHUNK_PAGES):
         part = images[i:i + CHUNK_PAGES]
         a, b = part[0][0], part[-1][0]
         note = (extra + f"\nこのファイルは全{n}ページあります。今回はそのうち {a}〜{b}ページ目を渡しています。"
-                f"ページ番号はファイル全体の番号（{a}〜{b}）で答えてください。前後のページから続いている書類もあります。")
-        docs = _read_once(build_content(own, part, [(p, tmap[p]) for p, _ in part if p in tmap], filename, note), n, kinds)
+                f"ページ番号はファイル全体の番号（{a}〜{b}）で答えてください。前後のページから続いている書類もあります。" + _context_of(out))
+        docs = _read_once(build_content(own, part, [(x[0], tmap[x[0]]) for x in part if x[0] in tmap], filename, note), n, kinds)
         for d in docs:
             d["pages"] = [p for p in d["pages"] if a <= p <= b] or list(range(a, b + 1))
             for dw in d["drawings"]:
@@ -276,7 +467,7 @@ def read_document(own: str, images: list, texts: list, filename: str = "", extra
             for k in ("doc_no", "ref_no", "doc_date", "amount", "due_on", "title", "counterparty"):
                 prev[k] = prev[k] or head[k]
         out += docs
-    return out[:60]
+    return consolidate(out, own)[:60]
 
 
 def guess_from_filename(filename: str) -> dict:

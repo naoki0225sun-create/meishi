@@ -375,7 +375,59 @@ def renderable(frow) -> bool:
     return frow["mime"] != "application/cad" or _ext(frow["filename"] or "") == ".dxf"
 
 
+CROP_DPI = 300
+
+
+def _crops_of(im) -> list:
+    """細かい字の拡大：下の表題欄（図名・材質・数量・表面処理、注文書の希望納期や担当印）と、上の改訂履歴の欄"""
+    w, h = im.size
+    out = []
+    if h < 600:
+        return out
+    if w > 3000:   # A3以上・横向きの図面は、全幅だと縮小で字がつぶれるので右半分を切り出す（表題欄と改訂欄は右側にあることが多い）
+        boxes = (("右下＝表題欄", (int(w * 0.5), int(h * 0.68), w, h)), ("右上＝改訂履歴", (int(w * 0.5), 0, w, int(h * 0.16))))
+    else:
+        boxes = (("下部＝表題欄・納期欄", (0, int(h * 0.70), w, h)), ("上部＝改訂履歴・書類の見出し", (0, 0, w, int(h * 0.14))))
+    for label, box in boxes:
+        cr = im.crop(box)
+        if cr.width > AI_PX:
+            cr = cr.resize((AI_PX, max(1, int(cr.height * AI_PX / cr.width))))
+        jpg, _ = _jpeg(cr, AI_PX, 85)
+        out.append((label, jpg))
+    return out
+
+
+def ai_crops(frow, pages: list) -> dict:
+    """AIに渡す拡大画像を、原本から高い解像度で作る（表示用の画像を引き伸ばすと字がつぶれるため）"""
+    out = {}
+    try:
+        data = storage.get_store().get(frow["storage_key"])
+        if data is None:
+            return out
+        if frow["mime"] == "application/pdf":
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tf:
+                tf.write(data)
+                path = tf.name
+            try:
+                for n in pages:
+                    try:
+                        out[n] = _crops_of(_pdf_render(path, n, CROP_DPI))
+                    except Exception:
+                        log.warning("拡大画像を作れませんでした（%sページ）", n)
+            finally:
+                os.unlink(path)
+        elif frow["mime"].startswith("image/"):
+            frames = _open_images(data, frow["mime"])
+            for n in pages:
+                if 1 <= n <= len(frames):
+                    out[n] = _crops_of(frames[n - 1].convert("RGB"))
+    except Exception:
+        log.exception("拡大画像を作れませんでした")
+    return out
+
+
 def ai_inputs(c, frow, page_from: int = None, page_to: int = None) -> tuple:
+    """images: [(ページ, 全体の画像, [(説明, 拡大画像), ...])]  texts: [(ページ, PDFの文字)]"""
     from PIL import Image
     st = storage.get_store()
     rows = c.execute("SELECT page_no, text FROM dz_pages WHERE file_id=? ORDER BY page_no", (frow["id"],)).fetchall()
@@ -389,6 +441,8 @@ def ai_inputs(c, frow, page_from: int = None, page_to: int = None) -> tuple:
         jpg, _ = _jpeg(Image.open(io.BytesIO(raw)), AI_PX, 80)
         imgs.append((r["page_no"], jpg))
         texts.append((r["page_no"], r["text"] or ""))
+    crops = ai_crops(frow, [x[0] for x in imgs])
+    imgs = [(n, j, crops.get(n) or []) for n, j in imgs]
     return imgs, texts
 
 
@@ -848,6 +902,13 @@ def candidates(c, t: str, d, card_companies: list) -> dict:
                 fc = [{"kind": "new", "company_id": None, "name": hint["folder"], "score": 60, "reason": f"フォルダ名「{hint['folder']}」"}]
             seen = {(x["kind"], x.get("company_id") or x["name"]) for x in fc}
             comp = fc + [x for x in comp if (x["kind"], x.get("company_id") or x["name"]) not in seen]
+    if not d["company_id"] and (not comp or comp[0]["score"] < 85):
+        sib = c.execute("""SELECT o.company_id, o.kind, co.name FROM dz_docs o JOIN dz_companies co ON co.id=o.company_id
+            WHERE o.tenant_id=? AND o.file_id=? AND o.id<>? AND o.status='confirmed' AND o.company_id IS NOT NULL
+            ORDER BY (o.kind='注文書') DESC LIMIT 1""", (t, d["file_id"], d["id"])).fetchone()
+        if sib:
+            comp = [{"kind": "company", "company_id": sib["company_id"], "name": sib["name"], "score": 97,
+                     "reason": f"同じファイルの{sib['kind']}と同じ会社"}] + [x for x in comp if x.get("company_id") != sib["company_id"]]
     ed = _l(d["edit_json"], {}) or {}
     chosen = ed.get("_company") or (comp[0] if comp and comp[0]["score"] >= 85 else None)
     company = next((x for x in cos if chosen and x["id"] == chosen.get("company_id")), None)
@@ -862,6 +923,23 @@ def candidates(c, t: str, d, card_companies: list) -> dict:
             deals = [{"deal_id": row["id"], "title": row["title"], "stage": row["stage"], "score": 100,
                       "reasons": ["案件画面から追加"]}] + [x for x in deals if x["deal_id"] != row["id"]]
             pick = row["id"]
+    # 同じファイルの注文書、または同じ注文番号の書類がすでに案件に紐づいていれば、その案件を第一候補にする
+    if not hint.get("deal_id"):
+        nos = [x for x in {v.get("ref_no"), v.get("doc_no")} if x]
+        q = "SELECT l.target_id, o.kind, o.doc_no, o.file_id FROM dz_links l JOIN dz_docs o ON o.id=l.doc_id WHERE l.tenant_id=? AND l.target_type='deal' AND o.id<>? AND o.status='confirmed' AND (o.file_id=?"
+        args = [t, d["id"], d["file_id"]]
+        if nos:
+            q += f" OR o.doc_no IN ({','.join('?' * len(nos))}) OR o.ref_no IN ({','.join('?' * len(nos))})"
+            args += nos + nos
+        q += ") ORDER BY (o.kind='注文書') DESC, o.id DESC LIMIT 1"
+        hit = c.execute(q, args).fetchone()
+        if hit:
+            row = c.execute("SELECT id, title, stage FROM deals WHERE id=? AND tenant_id=?", (hit["target_id"], t)).fetchone()
+            if row:
+                why = (f"同じファイルの{hit['kind']}が紐づいている案件" if hit["file_id"] == d["file_id"]
+                       else f"{hit['kind']} {hit['doc_no'] or ''} と同じ注文番号").strip()
+                deals = [{"deal_id": row["id"], "title": row["title"], "stage": row["stage"], "score": 98, "reasons": [why]}] + [x for x in deals if x["deal_id"] != row["id"]]
+                pick = row["id"]
     # 図番と版
     drawings = []
     warnings = []
