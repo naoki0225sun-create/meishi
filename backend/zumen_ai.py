@@ -218,9 +218,10 @@ def _shaky(docs: list) -> bool:
 STATS = {"fast": 0, "escalated": 0}
 
 
-def read_document(own: str, images: list, texts: list, filename: str = "", extra: str = "", kinds: list = None) -> list:
-    """ZUMEN_AI_MODEL_FAST を入れると、まず安いモデルで読み、迷ったものだけ上位モデルで読み直す"""
-    content = build_content(own, images, texts, filename, extra)
+CHUNK_PAGES = int(os.getenv("ZUMEN_AI_CHUNK_PAGES", "10"))
+
+
+def _read_once(content: list, page_count: int, kinds: list = None) -> list:
     fast = os.getenv("ZUMEN_AI_MODEL_FAST")
     if fast and fast != main_model():
         try:
@@ -228,12 +229,54 @@ def read_document(own: str, images: list, texts: list, filename: str = "", extra
             raw_docs = data.get("documents") if isinstance(data, dict) else None
             STATS["fast"] += 1
             if isinstance(raw_docs, list) and not _shaky([d for d in raw_docs if isinstance(d, dict)]):
-                return clean(data, len(images), kinds)
+                return clean(data, page_count, kinds)
             STATS["escalated"] += 1
         except Exception:
             logging.getLogger("zumen_ai").exception("安いモデルでの読み取りに失敗。上位モデルで読みます")
-    raw = call_ai(content)
-    return clean(parse_json(raw), len(images), kinds)
+    raw = call_ai(content, max_tokens=16000)
+    return clean(parse_json(raw), page_count, kinds)
+
+
+def _same_doc(a: dict, b: dict) -> bool:
+    """区切りをまたいで続いている書類か（同じ種類で、番号が同じか、図面で取引先が同じ）"""
+    if a["kind"] != b["kind"]:
+        return False
+    if a["doc_no"] and b["doc_no"]:
+        return a["doc_no"] == b["doc_no"]
+    return a["kind"] == "図面" and (a["counterparty"] or "") == (b["counterparty"] or "")
+
+
+def read_document(own: str, images: list, texts: list, filename: str = "", extra: str = "", kinds: list = None) -> list:
+    """ZUMEN_AI_MODEL_FAST を入れると、まず安いモデルで読み、迷ったものだけ上位モデルで読み直す。
+    ページが多いファイル（注文書と製作図・部品図をまとめてスキャンしたもの等）は CHUNK_PAGES ずつに分けて読み、つなぎ直す"""
+    n = len(images)
+    if n <= CHUNK_PAGES:
+        return _read_once(build_content(own, images, texts, filename, extra), n, kinds)
+    out = []
+    tmap = dict(texts)
+    for i in range(0, n, CHUNK_PAGES):
+        part = images[i:i + CHUNK_PAGES]
+        a, b = part[0][0], part[-1][0]
+        note = (extra + f"\nこのファイルは全{n}ページあります。今回はそのうち {a}〜{b}ページ目を渡しています。"
+                f"ページ番号はファイル全体の番号（{a}〜{b}）で答えてください。前後のページから続いている書類もあります。")
+        docs = _read_once(build_content(own, part, [(p, tmap[p]) for p, _ in part if p in tmap], filename, note), n, kinds)
+        for d in docs:
+            d["pages"] = [p for p in d["pages"] if a <= p <= b] or list(range(a, b + 1))
+            for dw in d["drawings"]:
+                if not (a <= (dw.get("page") or 0) <= b):
+                    dw["page"] = d["pages"][0]
+        docs.sort(key=lambda d: d["pages"][0])
+        if out and docs and _same_doc(out[-1], docs[0]) and docs[0]["pages"][0] == max(out[-1]["pages"]) + 1:
+            head = docs.pop(0)
+            prev = out[-1]
+            prev["pages"] = sorted(set(prev["pages"] + head["pages"]))
+            prev["lines"] += head["lines"]
+            prev["drawings"] += head["drawings"]
+            prev["questions"] = (prev["questions"] + head["questions"])[:5]
+            for k in ("doc_no", "ref_no", "doc_date", "amount", "due_on", "title", "counterparty"):
+                prev[k] = prev[k] or head[k]
+        out += docs
+    return out[:60]
 
 
 def guess_from_filename(filename: str) -> dict:

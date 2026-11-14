@@ -85,7 +85,7 @@ function thumb(fileId, page = 1, cls = '') {
 
 // ── 初期化 ──
 const NAV = [
-  ['inbox', '確認待ち', 'inbox'], ['companies', '会社', 'folder'], ['drawings', '図面', 'drawing'], ['schedule', '納期', 'cal'],
+  ['inbox', '確認待ち', 'inbox'], ['companies', '会社', 'folder'], ['drawings', '図面', 'drawing'], ['schedule', '工程表', 'cal'],
   ['site', '現場', 'factory'], ['numbers', '業績', 'chart'], ['settings', '設定', 'gear'],
 ];
 
@@ -105,6 +105,7 @@ async function init() {
   else if (p.get('drawing')) { setView('drawing', { id: Number(p.get('drawing')), rev: p.get('rev') ? Number(p.get('rev')) : null }); }
   else if (p.get('company')) { setView('companies', { id: Number(p.get('company')) }); }
   else if (v === 'site' && p.get('deal')) setView('site', { deal: Number(p.get('deal')) });
+  else if (v === 'schedule' && p.get('job')) setView('schedule', { job: Number(p.get('job')) });
   else setView(NAV.some(n => n[0] === v) ? v : (storeGet('zumen.view') || 'inbox'));
   refreshCount();
   setInterval(refreshCount, 60000);

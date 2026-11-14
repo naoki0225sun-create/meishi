@@ -50,6 +50,7 @@ import vendorreq  # 業者とのやりとり（再テレアポの依頼・資料
 import zumen  # 図面管理（図面タブ）
 import zumen_extra  # 図面管理の追加機能（書き込み・共有・質問・逆算・メール）
 import zumen_link  # 図面と名刺・営業・グループ会社とのつなぎ込み
+import zumen_plan  # 工程と担当者（社員・区分・工数・担当者別の予定）
 
 load_dotenv()
 
@@ -202,6 +203,7 @@ def on_startup():
     vendorreq.init_db()
     zumen.init_db()
     zumen_extra.init_db()
+    zumen_plan.init_db()
     prospects.start_worker()
     os.makedirs(IMAGES_DIR, exist_ok=True)
 
@@ -1201,6 +1203,7 @@ _zx_router, _zx_public = zumen_extra.build_router(check_session, fetch_cards, ge
 app.include_router(_zx_router)
 app.include_router(_zx_public)
 app.include_router(zumen_link.build_router(check_session, _zumen_router))
+app.include_router(zumen_plan.build_router(check_session, _zumen_router))
 app.include_router(slack_bot.build_router(slack_bot.SlackHandler(
     fetch_cards=fetch_cards,
     get_tenant=get_tenant,

@@ -165,6 +165,16 @@ def add_milestones(c, t: str, rows: list, kind: str):
             continue
         due = date.fromisoformat(x["due"])
         done = {r["stage"]: r["done_on"] for r in c.execute("SELECT stage, done_on FROM dz_schedule WHERE tenant_id=? AND deal_id=?", (t, x["deal_id"]))}
+        try:
+            import zumen_plan
+            planned = zumen_plan.milestones_of(c, t, x["deal_id"])
+        except Exception:
+            planned = None
+        if planned is not None:   # 現場のリーダーが担当者と日程を決めた案件は、その工程を使う
+            for m in planned:
+                dn = done.get(m["label"])
+                x["milestones"].append(m | {"done": dn, "late": not dn and m["plan"] < today.isoformat() and x.get("state") != "shipped"})
+            continue
         for st in steps_for(c, t, x.get("company_id"), kind):
             plan = back_business_days(due, int(st.get("days") or 0))
             dn = done.get(st["label"])

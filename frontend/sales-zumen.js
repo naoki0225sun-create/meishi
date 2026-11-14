@@ -17,6 +17,7 @@ async function loadDealDocs(dealId) {
     <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><a class="btn-sm" href="/zumen-print.html?deal=${dealId}" target="_blank">製作指示書を印刷</a>
       <a class="btn-sm" href="/zumen.html?view=site&deal=${dealId}">現場の画面で開く</a>
       ${r.company_id ? `<a class="btn-sm" href="/zumen.html?company=${r.company_id}">会社フォルダを開く</a>` : ''}</div>
+    <div id="dealPlan"></div>
     ${r.pending ? `<div class="zr-warn info" style="margin-top:8px">確認待ち・読み取り中の書類が${r.pending}件あります <a class="btn-link" href="/zumen.html">図面タブで確認する</a></div>` : ''}
     <div class="zx-docs" style="margin-top:10px">${r.docs.map(d => `<a class="zr-rel" href="/zumen.html?doc=${d.id}">
       <img class="zm-thumb sm" src="/api/zumen/files/${d.file_id}/page/${d.page_from || 1}?size=thumb" alt="" onerror="this.style.visibility='hidden'">
@@ -24,6 +25,16 @@ async function loadDealDocs(dealId) {
       ${d.due_on ? `<small>納期 ${esc(fmtDate(d.due_on))}</small>` : ''}</a>`).join('') || '<div class="boss-empty">まだ書類はありません</div>'}</div>
     ${r.drawings.length ? `<div class="section-label" style="margin-top:12px"><span>図面（最新版）</span></div><div class="zx-dws">${r.drawings.map(dw => `<a class="zr-rel" href="/zumen.html?drawing=${dw.id}">
       ${esc(dw.drawing_no)} <b style="color:var(--green)">${esc(dw.rev || (dw.file_id ? '初版' : ''))}</b><small>${esc(dw.name || '')}</small></a>`).join('')}</div>` : ''}`;
+  api(`/api/zumen/plan/jobs/${dealId}`).then(p => {
+    const j = p.job, host = document.getElementById('dealPlan');
+    const md = d => d ? `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}` : '';
+    if (!host || !j.tasks.length) return;
+    const cat = { panel: '盤の筐体', laser: 'レーザー加工', other: 'その他' }[j.category] || '未分類';
+    const un = j.tasks.filter(t => !t.staff_id).length;
+    host.innerHTML = `<div class="section-label" style="margin-top:14px"><span>工程と担当者</span><a class="btn-link" href="/zumen.html?view=schedule&job=${dealId}">${j.planned ? '工程表で変更する' : '担当者を決める'}</a></div>
+      <div class="zx-plan"><div class="zx-plan-meta"><span>区分：${esc(cat)}</span><span>CAD担当：${esc(j.cad_staff || '未定')}</span>${j.planned ? (un ? `<span class="pill warn">担当未定 ${un}</span>` : '<span class="pill good">割り当て済み</span>') : '<span class="pill">仮の予定（担当未定）</span>'}</div>
+      <div class="zx-plan-list">${j.tasks.map(t => `<div class="${t.done ? 'done' : t.late ? 'late' : ''}"><b>${esc(t.label)}</b><span>${esc(t.staff || '未定')}</span><span>${t.start_on !== t.end_on ? `${md(t.start_on)}〜` : ''}${md(t.end_on)}</span><span>${t.done ? '完了' : t.late ? '遅れ' : ''}</span></div>`).join('')}</div></div>`;
+  }).catch(() => {});
   api(`/api/zumen/group/deals/${dealId}/docs`).then(g => {
     if (!g.tenant || !(g.drawings.length || g.docs.length)) return;
     const pg = (fid, n, size) => `/api/zumen/group/deals/${dealId}/page/${fid}/${n}?size=${size}`;

@@ -394,90 +394,7 @@ ZVIEWS.drawing = async ({ id, rev }) => {
   root.querySelectorAll('[data-del-bom]').forEach(b => b.onclick = async () => { await api(`/api/zumen/bom/${b.dataset.delBom}`, { method: 'DELETE' }); ZVIEWS.drawing({ id }); });
 };
 
-// ── 納期（カレンダー・ガント） ──
-const SC = { mode: storeGet('zumen.scmode') || 'gantt', month: null };
-const STATE_LABEL = { late: '遅れ', soon: '納期まで7日以内', ok: '', nodue: '納期未設定', shipped: '出荷済み' };
-ZVIEWS.schedule = async () => {
-  if (!SC.month) { const t = new Date(); SC.month = new Date(t.getFullYear(), t.getMonth(), 1); }
-  const f = new Date(SC.month.getFullYear(), SC.month.getMonth() - 1, 1), to = new Date(SC.month.getFullYear(), SC.month.getMonth() + 3, 0);
-  const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  const r = await api(`/api/zumen/schedule?from=${iso(f)}&to=${iso(to)}`);
-  const late = r.rows.filter(x => x.state === 'late').length, soon = r.rows.filter(x => x.state === 'soon').length, nodue = r.rows.filter(x => x.state === 'nodue').length;
-  VP().innerHTML = `
-    <div class="zs-bar">
-      <div class="seg" id="scMode"><button data-m="gantt" class="${SC.mode === 'gantt' ? 'is-on' : ''}">工程表</button><button data-m="month" class="${SC.mode === 'month' ? 'is-on' : ''}">カレンダー</button></div>
-      <button class="btn-sm" id="scPrev">‹</button><b class="sc-month">${SC.month.getFullYear()}年${SC.month.getMonth() + 1}月</b><button class="btn-sm" id="scNext">›</button><button class="btn-link" id="scToday">今日</button>
-      <div class="sc-sum">${late ? `<span class="pill bad">遅れ ${late}</span>` : ''}${soon ? `<span class="pill warn">納期まで7日以内 ${soon}</span>` : ''}${nodue ? `<span class="pill warn">納期未設定 ${nodue}</span>` : ''}</div>
-    </div>
-    ${weekSteps(r)}
-    <div id="scBody"></div>
-    <div class="sc-foot">注文書を確定すると、この画面と共有カレンダーに納期が表示されます。◆は納期から逆算した工程の予定です。押すと完了になります。日数は「設定」で変更できます。</div>`;
-  $('scMode').querySelectorAll('button').forEach(b => b.onclick = () => { SC.mode = b.dataset.m; storeSet('zumen.scmode', SC.mode); ZVIEWS.schedule(); });
-  $('scPrev').onclick = () => { SC.month = new Date(SC.month.getFullYear(), SC.month.getMonth() - 1, 1); ZVIEWS.schedule(); };
-  $('scNext').onclick = () => { SC.month = new Date(SC.month.getFullYear(), SC.month.getMonth() + 1, 1); ZVIEWS.schedule(); };
-  $('scToday').onclick = () => { SC.month = null; ZVIEWS.schedule(); };
-  const open = x => x.deal_id ? location.href = `/sales.html?deal=${x.deal_id}` : setView('doc', { id: x.doc_id || x.order_ids[0] });
-  if (SC.mode === 'month') drawMonth(r, open); else drawGantt(r, open);
-};
-
-function drawGantt(r, open) {
-  const start = new Date(SC.month.getFullYear(), SC.month.getMonth(), 1);
-  const days = 70;
-  const dayIdx = s => Math.round((new Date(s + 'T00:00:00') - start) / 864e5);
-  const today = dayIdx(r.today);
-  const head = [];
-  for (let i = 0; i < days; i++) {
-    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
-    head.push(`<div class="g-day ${d.getDay() === 0 || d.getDay() === 6 ? 'we' : ''} ${d.getDate() === 1 ? 'm1' : ''}">${d.getDate() === 1 ? `<b>${d.getMonth() + 1}月</b>` : ''}${d.getDate()}</div>`);
-  }
-  const rows = r.rows.filter(x => x.state !== 'shipped' || (x.due && dayIdx(x.due) >= 0));
-  $('scBody').innerHTML = `<div class="gantt" style="--days:${days}">
-      <div class="g-row g-head"><div class="g-label"></div><div class="g-track">${head.join('')}</div></div>
-      ${rows.map((x, i) => {
-        const s = Math.max(0, x.start ? dayIdx(x.start) : (x.due ? dayIdx(x.due) - 7 : 0)), e = x.due ? dayIdx(x.due) : s;
-        const vis = e >= 0 && s < days;
-        const ms = (x.milestones || []).map(m => { const k = dayIdx(m.plan); return k >= 0 && k < days ? `<button class="g-ms ${m.done ? 'done' : m.late ? 'late' : ''}" style="left:calc(${k} * var(--d) + var(--d) / 2)" data-ms="${i}|${esc(m.label)}|${m.done ? 1 : 0}" title="${esc(m.label)}　予定 ${fmtMD(m.plan)}${m.done ? `（完了 ${fmtMD(m.done)}）` : m.late ? '（遅れ）' : ''}　クリックで完了にする"></button>` : ''; }).join('');
-        return `<div class="g-row" data-i="${i}"><div class="g-label"><b>${esc(x.company || '')}</b><span>${esc(x.title || '')}</span>
-            ${x.deal_id ? `<a class="g-print" href="/zumen-print.html?deal=${x.deal_id}" target="_blank" title="製作指示書を印刷">${ico('printer', 12)}</a>` : ''}
-            ${x.stage ? `<span class="stage-badge" data-stage="${esc(x.stage)}">${esc(x.stage)}</span>` : ''}${STATE_LABEL[x.state] ? `<span class="pill ${x.state === 'late' ? 'bad' : x.state === 'shipped' ? 'good' : 'warn'}">${STATE_LABEL[x.state]}</span>` : ''}</div>
-          <div class="g-track">${vis ? `<div class="g-bar s-${x.state}" style="left:calc(${Math.max(0, s)} * var(--d));width:calc(${Math.max(1, Math.min(days, e + 1) - Math.max(0, s))} * var(--d))" title="${esc(fmtDate(x.start))} 〜 納期 ${esc(fmtDate(x.due))}">
-            <span>${x.due ? `納期 ${fmtMD(x.due)}` : ''}</span></div>` : ''}${ms}${today >= 0 && today < days ? `<div class="g-today" style="left:calc(${today} * var(--d))"></div>` : ''}</div></div>`;
-      }).join('') || '<div class="boss-empty" style="margin:16px">この期間の納期はありません</div>'}
-    </div>`;
-  $('scBody').querySelectorAll('[data-i]').forEach(el => el.onclick = ev => { if (ev.target.closest('.g-ms, .g-print')) return; open(rows[Number(el.dataset.i)]); });
-  $('scBody').querySelectorAll('[data-ms]').forEach(b => b.onclick = async ev => {
-    ev.stopPropagation();
-    const [i, label, done] = b.dataset.ms.split('|');
-    await post('/api/zumen/schedule/done', { deal_id: rows[Number(i)].deal_id, label, done: done !== '1' });
-    showToast(done !== '1' ? `「${label}」を完了にしました` : `「${label}」を未完了に戻しました`, { duration: 1500 });
-    ZVIEWS.schedule();
-  });
-}
-
-function weekSteps(r) {
-  const today = r.today, wk = new Date(Date.parse(today) + 7 * 864e5).toISOString().slice(0, 10);
-  const items = [];
-  r.rows.forEach(x => (x.milestones || []).forEach(m => { if (!m.done && m.plan <= wk && x.state !== 'shipped') items.push({ x, m }); }));
-  items.sort((a, b) => a.m.plan.localeCompare(b.m.plan));
-  if (!items.length) return '';
-  return `<div class="sc-week"><div class="zr-label">${ico('clock', 13)} 今週中の工程（${items.length}）</div><div class="sc-week-list">${items.slice(0, 12).map(({ x, m }) => `
-    <div class="sc-step ${m.late ? 'late' : ''}"><span class="sc-step-d">${fmtMD(m.plan)}</span><b>${esc(m.label)}</b><span>${esc(x.company || '')} ${esc(x.title || '')}</span>${m.late ? '<em>遅れ</em>' : ''}</div>`).join('')}</div></div>`;
-}
-
-function drawMonth(r, open) {
-  const y = SC.month.getFullYear(), m = SC.month.getMonth();
-  const first = new Date(y, m, 1), startDow = first.getDay(), n = new Date(y, m + 1, 0).getDate();
-  const by = {};
-  r.rows.forEach((x, i) => { if (x.due) (by[x.due] = by[x.due] || []).push([x, i]); });
-  const cells = [];
-  for (let i = 0; i < startDow; i++) cells.push('<div class="mc-cell is-off"></div>');
-  for (let d = 1; d <= n; d++) {
-    const key = `${y}-${pad(m + 1)}-${pad(d)}`;
-    cells.push(`<div class="mc-cell ${key === r.today ? 'is-today' : ''}"><div class="mc-d">${d}</div>${(by[key] || []).map(([x, i]) => `<button class="mc-item s-${x.state}" data-i="${i}">${esc(x.company || '')} ${esc(x.title || '')}</button>`).join('')}</div>`);
-  }
-  $('scBody').innerHTML = `<div class="mcal"><div class="mc-dow">${['日', '月', '火', '水', '木', '金', '土'].map(w => `<div>${w}</div>`).join('')}</div><div class="mc-grid">${cells.join('')}</div></div>`;
-  $('scBody').querySelectorAll('[data-i]').forEach(el => el.onclick = () => open(r.rows[Number(el.dataset.i)]));
-}
+// ── 納期（2か月・2週間・担当者別）は zumen-plan.js ──
 
 // ── 現場（タブレット） ──
 ZVIEWS.site = async ({ deal } = {}) => {
@@ -494,8 +411,8 @@ ZVIEWS.site = async ({ deal } = {}) => {
           ${dw.file_id ? thumb(dw.file_id, dw.page_no || 1) : `<div class="zg-noimg">${ico('drawing', 26)}</div>`}
           <div class="st-dw-no">${esc(dw.drawing_no)} <b>${esc(dw.rev || '初版')}</b></div>
           ${dw.rev_mismatch ? `<div class="st-flag bad">注文書は${esc(dw.ordered_rev)}版</div>` : ''}${dw.bad_notes ? `<div class="st-flag warn">不具合メモ ${dw.bad_notes}</div>` : ''}</button>`).join('') || '<div class="boss-empty">図面がまだ紐づいていません</div>'}</div>
-      ${(x.milestones || []).length ? `<div class="st-steps">${x.milestones.map(m => `<span class="${m.done ? 'done' : m.late ? 'late' : ''}">${esc(m.label)} ${fmtMD(m.plan)}${m.done ? ' 完了' : ''}</span>`).join('')}</div>` : ''}
-      <div class="st-acts">${x.deal_id ? `<a class="st-btn" href="/zumen-print.html?deal=${x.deal_id}" target="_blank">${ico('printer', 16)} 製作指示書</a>` : ''}${x.deal_id ? `${x.started_at ? '<span class="pill good">製作中</span>' : `<button class="st-btn" data-site-act="start:${x.deal_id}">製作を始める</button>`}
+      ${(x.milestones || []).length ? `<div class="st-steps">${x.milestones.map(m => `<span class="${m.done ? 'done' : m.late ? 'late' : ''}">${esc(m.label)}${m.staff ? `<em>${esc(m.staff)}</em>` : ''} ${fmtMD(m.plan)}${m.done ? ' 完了' : ''}</span>`).join('')}</div>` : ''}
+      <div class="st-acts">${x.deal_id ? `<button class="st-btn" data-plan="${x.deal_id}">${ico('user', 16)} 工程の割り当て</button><a class="st-btn" href="/zumen-print.html?deal=${x.deal_id}" target="_blank">${ico('printer', 16)} 製作指示書</a>` : ''}${x.deal_id ? `${x.started_at ? '<span class="pill good">製作中</span>' : `<button class="st-btn" data-site-act="start:${x.deal_id}">製作を始める</button>`}
         <button class="st-btn primary" data-site-act="ship:${x.deal_id}">出荷済みにする</button>` : ''}</div>
     </div>`).join('') || '<div class="boss-empty" style="margin:20px">いま製作するものはありません</div>'}</div>`;
   $('stReload').onclick = () => ZVIEWS.site();
@@ -504,6 +421,7 @@ ZVIEWS.site = async ({ deal } = {}) => {
     const [i, did] = b.dataset.siteDw.split(':').map(Number);
     siteDrawing(r.items[i], r.items[i].drawings.find(x => x.id === did));
   });
+  VP().querySelectorAll('[data-plan]').forEach(b => b.onclick = () => openJob(Number(b.dataset.plan)));
   VP().querySelectorAll('[data-site-act]').forEach(b => b.onclick = async () => {
     const [action, deal] = b.dataset.siteAct.split(':');
     if (action === 'ship' && !await showConfirm({ title: '出荷済みにする', message: 'この案件を出荷済みにして、現場の一覧から外します。', okLabel: '出荷済みにする' })) return;
@@ -632,9 +550,9 @@ ZVIEWS.numbers = async () => {
 };
 
 // ── 設定・状態 ──
-ZVIEWS.settings = async () => {
-  const [s, st, tr, tp, ml] = await Promise.all([api('/api/zumen/settings'), api('/api/zumen/admin/status'), api('/api/zumen/trash'),
-    api('/api/zumen/templates'), api('/api/zumen/mail/status').catch(() => ({ configured: false }))]);
+ZVIEWS.settings = async (arg = {}) => {
+  const [s, st, tr, tp, ml, sf] = await Promise.all([api('/api/zumen/settings'), api('/api/zumen/admin/status'), api('/api/zumen/trash'),
+    api('/api/zumen/templates'), api('/api/zumen/mail/status').catch(() => ({ configured: false })), staffCard()]);
   const b = st.backup;
   const backupAge = b && b.finished_at ? (Date.now() - new Date(b.finished_at).getTime()) / 36e5 : null;
   const acc = Object.fromEntries((st.accuracy || []).map(x => [x.field, x]));
@@ -666,9 +584,10 @@ ZVIEWS.settings = async () => {
         <div class="zr-saved">最初は100件ほどで試し、AIの読み取り精度と費用を確認してから残りを取り込むことをおすすめします。ZIPファイルは1つ200MBまでです。それより大きい場合は、フォルダを選んで取り込んでください</div>
       </div>
     </section>
+    ${sf.html}
     <div class="boss-grid">
       <section class="boss-card c-teal"><div class="section-label"><span>納期から逆算する工程</span></div>
-        <div class="zr-saved">納期の何営業日前にどの工程を行うかを設定します。工程表の◆、現場の画面、製作指示書に表示されます</div>
+        <div class="zr-saved">納期の何営業日前にどの工程を行うかを設定します。工程表で担当者を決めるまでの仮の予定になり、現場の画面と製作指示書にも表示されます</div>
         <div id="tplRows">${tp.default.map(x => tplRow(x)).join('')}</div>
         <div class="zr-actions" style="position:static;background:none"><button class="btn-link" id="tplAdd">＋ 工程を追加</button><button class="btn-sm btn-sm-primary" id="tplSave">保存</button>
           ${tp.is_custom_default ? '<button class="btn-link" id="tplReset">初期設定に戻す</button>' : ''}</div>
@@ -710,6 +629,8 @@ ZVIEWS.settings = async () => {
   $('imZip').onchange = e => { importFiles([...e.target.files]); e.target.value = ''; };
   $('sRetry').onclick = async () => { const r = await post('/api/zumen/admin/retry'); showToast(`${r.requeued}件を読み直します`); };
   VP().querySelectorAll('[data-restore]').forEach(b => b.onclick = async () => { await post(`/api/zumen/docs/${b.dataset.restore}/restore`); showToast('元に戻しました', { type: 'success' }); ZVIEWS.settings(); });
+  sf.bind();
+  if (arg.focus === 'staff') $('staffCard').scrollIntoView({ block: 'start' });
 };
 
 // ── 社外への共有リンク ──

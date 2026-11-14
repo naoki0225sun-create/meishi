@@ -564,6 +564,8 @@ def process(job: dict):
             docs[0]["pages"] = list(range(pf, (pt or pf) + 1))
     if not docs:
         docs = [_default_doc(frow)]
+    if not redo and len(docs) >= 1 and (frow["pages"] or 1) > 1:
+        _cover_all_pages(docs, frow["pages"] or 1)
     now = _now()
     with _conn() as c:
         c.execute("BEGIN IMMEDIATE")
@@ -583,6 +585,18 @@ def process(job: dict):
                 _write_ai(c, cur.lastrowid, d, None, None, now)
                 _index(c, cur.lastrowid)
         c.commit()
+
+
+def _cover_all_pages(docs: list, total: int):
+    """AIがどの書類にも入れなかったページを、直前の書類に足す（ページが消えて確認待ちに出てこないのを防ぐ）"""
+    covered = {p for d in docs for p in d["pages"]}
+    docs.sort(key=lambda d: min(d["pages"]))
+    for p in range(1, total + 1):
+        if p in covered:
+            continue
+        before = [d for d in docs if min(d["pages"]) < p]
+        target = before[-1] if before else docs[0]
+        target["pages"] = sorted(set(target["pages"] + [p]))
 
 
 def _write_ai(c, doc_id: int, d: dict, pf, pt, now: str):
@@ -2948,6 +2962,7 @@ def build_router(check_session: Callable, fetch_cards: Callable, get_tenant: Opt
                 "auto_pick": zm.AUTO_PICK}
 
     r.confirm_in_tx = confirm_in_tx
+    r.schedule_rows = schedule
     r.card_companies = card_companies
     r.group_names = group_names
     r.compute_numbers = compute_numbers
