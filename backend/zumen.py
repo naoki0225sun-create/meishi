@@ -216,13 +216,25 @@ def _jpeg(img, px: int, quality: int = 82) -> tuple:
     return b.getvalue(), im.size
 
 
+def _bin(name: str) -> str:
+    """外部の道具（pdftoppm など）の場所。サービスの PATH が venv だけに絞られていても見つけられるようにする"""
+    import shutil
+    found = shutil.which(name)
+    if found:
+        return found
+    for d in ("/usr/bin", "/usr/local/bin", "/bin", "/opt/homebrew/bin"):
+        if os.path.exists(os.path.join(d, name)):
+            return os.path.join(d, name)
+    return name
+
+
 def _pdf_pages(path: str) -> int:
     try:
         from pypdf import PdfReader
         return len(PdfReader(path).pages)
     except Exception:
         try:
-            out = subprocess.run(["pdfinfo", path], capture_output=True, text=True, timeout=60).stdout
+            out = subprocess.run([_bin("pdfinfo"), path], capture_output=True, text=True, timeout=60).stdout
             m = re.search(r"Pages:\s+(\d+)", out)
             return int(m.group(1)) if m else 0
         except Exception:
@@ -231,7 +243,7 @@ def _pdf_pages(path: str) -> int:
 
 def _pdf_text(path: str, n: int) -> str:
     try:
-        return subprocess.run(["pdftotext", "-f", str(n), "-l", str(n), "-layout", path, "-"],
+        return subprocess.run([_bin("pdftotext"), "-f", str(n), "-l", str(n), "-layout", path, "-"],
                               capture_output=True, text=True, timeout=60).stdout.strip()[:20000]
     except Exception:
         return ""
@@ -240,7 +252,7 @@ def _pdf_text(path: str, n: int) -> str:
 def _safe_dpi(path: str, n: int, dpi: int, max_px: int = 9000) -> int:
     """極端に大きいページ（巨大な用紙サイズを書いたPDF）で画像が何GBにもならないよう、長い辺を max_px までに抑える"""
     try:
-        out = subprocess.run(["pdfinfo", "-f", str(n), "-l", str(n), path], capture_output=True, text=True, timeout=30).stdout
+        out = subprocess.run([_bin("pdfinfo"), "-f", str(n), "-l", str(n), path], capture_output=True, text=True, timeout=30).stdout
         m = re.search(r"Page\s+%d\s+size:\s+([\d.]+)\s+x\s+([\d.]+)" % n, out) or re.search(r"Page size:\s+([\d.]+)\s+x\s+([\d.]+)", out)
         if m:
             longest = max(float(m.group(1)), float(m.group(2))) / 72   # インチ
@@ -256,8 +268,11 @@ def _pdf_render(path: str, n: int, dpi: int = 110):
     with tempfile.TemporaryDirectory() as td:
         base = os.path.join(td, "p")
         dpi = _safe_dpi(path, n, dpi)
-        subprocess.run(["pdftoppm", "-f", str(n), "-l", str(n), "-r", str(dpi), "-jpeg", "-jpegopt", "quality=88", path, base],
-                       capture_output=True, timeout=180, check=True)
+        try:
+            subprocess.run([_bin("pdftoppm"), "-f", str(n), "-l", str(n), "-r", str(dpi), "-jpeg", "-jpegopt", "quality=88", path, base],
+                           capture_output=True, timeout=180, check=True)
+        except FileNotFoundError:
+            raise RuntimeError("PDFを画像にする道具（pdftoppm）がサーバーで見つかりません。システム担当者に連絡してください")
         outs = sorted(f for f in os.listdir(td) if f.endswith(".jpg"))
         if not outs:
             raise RuntimeError("PDFを画像にできませんでした")
