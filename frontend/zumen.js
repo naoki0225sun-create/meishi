@@ -423,7 +423,8 @@ function drawReview() {
         ${e.drawings.map((dw, i) => {
           const st = (c.drawings || [])[i];
           const s = st ? DR_STATUS[st.status] : null;
-          return `<div class="zr-dw" data-dw="${i}">
+          return `<div class="zr-dw" data-dw="${i}" data-dw-page="${esc(dw.page || d.page_from)}">
+            <button type="button" class="zr-dw-see" data-see="${esc(dw.page || d.page_from)}" title="この図面を左に表示します"><i></i>${esc(dw.page || d.page_from)}ページ目を表示</button>
             <div class="zr-dw-row"><label>図番<input class="email-input compact ${aiMark('drawing_no', dw.drawing_no)}" data-df="drawing_no" value="${esc(dw.drawing_no)}"></label>
               <label class="w-s">版<input class="email-input compact ${aiMark('rev', dw.rev)}" data-df="rev" value="${esc(dw.rev)}" placeholder="初版"></label>
               <label>品名<input class="email-input compact" data-df="name" value="${esc(dw.name)}"></label>
@@ -470,8 +471,11 @@ function drawReview() {
       </div>
     </div>
   </div>`;
-  zvCreate($('zrView'), { fileId: d.file.id, pages: d.file.pages, pageFrom: d.page_from, pageTo: d.page_to, title: d.file.filename });
+  DS.lockUntil = Date.now() + 1500;   // 開いた直後に右が勝手にスクロールしないように
+  const viewer = zvCreate($('zrView'), { fileId: d.file.id, pages: d.file.pages, pageFrom: d.page_from, pageTo: d.page_to, title: d.file.filename,
+    onPage: p => syncDrawingRows(p, false) });
   bindReview();
+  bindDrawingSync(viewer, d);
 }
 
 function sameCo(a, b) {
@@ -484,6 +488,55 @@ let COMPANIES = null;
 async function companyList() {
   if (!COMPANIES) COMPANIES = (await api('/api/zumen/companies')).companies;
   return COMPANIES;
+}
+
+// ── 右の「図番と版」と左の図面の連動 ──
+// 右をスクロールすると、画面の上のほうに来た図番の図面を左に出す。「〇ページ目を表示」を押すとすぐにその図面を出す。
+// 左でページを送ると、右の該当する図番に印を付けて見える位置まで送る。
+const DS = { viewer: null, page: null, lockUntil: 0, obs: null, t: null };
+function scrollParent(el) {
+  for (let p = el && el.parentElement; p; p = p.parentElement) {
+    const oy = getComputedStyle(p).overflowY;
+    if ((oy === 'auto' || oy === 'scroll') && p.scrollHeight > p.clientHeight) return p;
+  }
+  return null;
+}
+function syncDrawingRows(page, fromRight) {
+  DS.page = page;
+  const rows = [...document.querySelectorAll('.zr-dw[data-dw-page]')];
+  let first = null;
+  rows.forEach(r => { const on = Number(r.dataset.dwPage) === page; r.classList.toggle('is-shown', on); if (on && !first) first = r; });
+  if (!fromRight && first && Date.now() > DS.lockUntil) {
+    DS.lockUntil = Date.now() + 700;   // 右を動かしたことで、また左が動かないようにする
+    first.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+}
+function showDrawingPage(page) {
+  if (!DS.viewer || !page || page === DS.page) { syncDrawingRows(page, true); return; }
+  DS.lockUntil = Date.now() + 700;   // 右から動かしたときは、左の切り替えで右を動かさない
+  DS.viewer.goto(page);
+  syncDrawingRows(page, true);
+  [page - 1, page + 1].forEach(n => { if (n >= DS.from && n <= DS.to) { const im = new Image(); im.src = ZV.pageUrl(DS.fileId, n, 'view'); } });   // 前後のページを先に読んでおく
+}
+function bindDrawingSync(viewer, d) {
+  Object.assign(DS, { viewer, page: d.page_from, fileId: d.file.id, from: d.page_from, to: d.page_to });
+  if (DS.obs) { DS.obs.disconnect(); DS.obs = null; }
+  const rows = [...document.querySelectorAll('.zr-dw[data-dw-page]')];
+  rows.forEach(r => r.querySelector('[data-see]').onclick = () => { DS.lockUntil = Date.now() + 700; showDrawingPage(Number(r.dataset.dwPage)); });
+  syncDrawingRows(d.page_from, true);
+  if (rows.length < 2 || !('IntersectionObserver' in window)) return;
+  const root = scrollParent(rows[0]);
+  const visible = new Map();
+  DS.obs = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) visible.set(e.target, e.boundingClientRect.top); else visible.delete(e.target); });
+    if (Date.now() < DS.lockUntil) return;
+    clearTimeout(DS.t);
+    DS.t = setTimeout(() => {   // 少し止まってから切り替える（勢いよくスクロールしている間は追いかけない）
+      const top = [...visible.keys()].sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0];
+      if (top) showDrawingPage(Number(top.dataset.dwPage));
+    }, 140);
+  }, { root, rootMargin: '-20% 0px -55% 0px', threshold: 0 });
+  rows.forEach(r => DS.obs.observe(r));
 }
 
 function bindReview() {
@@ -521,6 +574,8 @@ function bindReview() {
   }));
   root.querySelectorAll('[data-del-line]').forEach(b => b.onclick = () => { e.lines.splice(Number(b.dataset.delLine), 1); drawReview(); save(); });
   if ($('addLine')) $('addLine').onclick = () => { e.lines.push({ drawing_no: '', rev: '', name: '', material: '', thickness: '', qty: null, unit_price: null, amount: null, due_on: '' }); drawReview(); };
+  root.querySelectorAll('[data-dw]').forEach(box => { const pg = box.querySelector('[data-df="page"]'); if (pg) pg.addEventListener('change', () => {
+    const v = Number(pg.value); if (v) { box.dataset.dwPage = v; const b = box.querySelector('[data-see]'); b.dataset.see = v; b.lastChild.textContent = `${v}ページ目を表示`; showDrawingPage(v); } }); });
   root.querySelectorAll('[data-dw]').forEach(box => box.querySelectorAll('[data-df]').forEach(inp => inp.oninput = () => {
     const dw = e.drawings[Number(box.dataset.dw)];
     dw[inp.dataset.df] = inp.dataset.df === 'page' ? Number(inp.value) : inp.value; save();

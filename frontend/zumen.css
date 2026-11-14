@@ -794,3 +794,13 @@ i.cat { display: inline-block; width: 9px; height: 9px; border-radius: 3px; back
 .zx-plan-list .done { color: var(--ink-3); }
 .zx-plan-list .late span:last-child { color: var(--red); font-weight: 600; }
 .zx-plan-list .done span:last-child { color: var(--green); }
+
+/* 確認画面：図番と版 ⇄ 左の図面の連動 */
+.zr-dw { position: relative; transition: border-color .15s, box-shadow .15s, background .15s; scroll-margin: 12px; }
+.zr-dw.is-shown { border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand-soft); background: color-mix(in srgb, var(--brand-soft) 35%, #fff); }
+.zr-dw-see { all: unset; cursor: pointer; box-sizing: border-box; justify-self: start; display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px 4px 8px; border-radius: 999px; border: 1px solid var(--line); background: #fff; font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.zr-dw-see i { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--ink-3); box-sizing: border-box; display: inline-block; flex: none; }
+.zr-dw-see:hover { border-color: var(--brand); color: var(--brand); }
+.zr-dw.is-shown .zr-dw-see { border-color: var(--brand); background: var(--brand); color: #fff; }
+.zr-dw.is-shown .zr-dw-see i { border-color: #fff; background: radial-gradient(circle, #fff 0 3px, transparent 3.5px); }
+@media (pointer: coarse) { .zr-dw-see { padding: 7px 12px 7px 10px; font-size: 13px; } }
