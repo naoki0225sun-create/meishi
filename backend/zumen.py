@@ -2364,39 +2364,51 @@ def build_router(check_session: Callable, fetch_cards: Callable, get_tenant: Opt
     # ── 検索 ──
     @r.get("/search")
     def search(q: str = "", kind: str = "", company_id: Optional[int] = None, frm: str = Query("", alias="from"), to: str = "",
-               status: str = "confirmed", session: dict = Depends(check_session)):
+               amount_min: Optional[int] = None, amount_max: Optional[int] = None, direction: str = "",
+               status: str = "confirmed", offset: int = 0, session: dict = Depends(check_session)):
+        """確定した書類を、取引先・日付の範囲・金額の範囲・種類・本文の文字で探す（条件はすべて同時に使える）"""
         t = session["tenant_id"]
+        for v in (frm, to):
+            if v and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", v):
+                raise HTTPException(400, "日付の形式が正しくありません")
+        where, args = ["d.tenant_id=?", "d.status!='trashed'"], [t]
+        if status != "all":
+            where.append("d.status=?"); args.append(status)
         with _conn() as c:
             if q.strip():
-                ids = search_doc_ids(c, t, q, 500)
+                ids = search_doc_ids(c, t, q, 2000)
                 if not ids:
-                    rows = []
-                else:
-                    rows = c.execute(f"""SELECT d.*, f.filename, co.name company FROM dz_docs d JOIN dz_files f ON f.id=d.file_id
-                        LEFT JOIN dz_companies co ON co.id=d.company_id WHERE d.id IN ({','.join('?' * len(ids))})""", ids).fetchall()
-            else:
-                rows = c.execute("""SELECT d.*, f.filename, co.name company FROM dz_docs d JOIN dz_files f ON f.id=d.file_id
-                    LEFT JOIN dz_companies co ON co.id=d.company_id WHERE d.tenant_id=? ORDER BY d.id DESC LIMIT 500""", (t,)).fetchall()
+                    return {"docs": [], "total": 0, "mode": FTS["mode"]}
+                where.append(f"d.id IN ({','.join('?' * len(ids))})"); args += ids
+            if kind:
+                where.append("d.kind=?"); args.append(kind)
+            if direction in ("受け取り", "発行"):
+                where.append("d.direction=?"); args.append(direction)
+            if company_id:
+                where.append("d.company_id=?"); args.append(company_id)
+            dd = "COALESCE(d.doc_date, substr(d.created_at,1,10))"
+            if frm:
+                where.append(f"{dd}>=?"); args.append(frm)
+            if to:
+                where.append(f"{dd}<=?"); args.append(to)
+            if amount_min is not None:
+                where.append("d.amount>=?"); args.append(amount_min)
+            if amount_max is not None:
+                where.append("d.amount<=?"); args.append(amount_max)
+            w = " AND ".join(where)
+            total = c.execute(f"SELECT COUNT(*) FROM dz_docs d WHERE {w}", args).fetchone()[0]
+            rows = c.execute(f"""SELECT d.*, f.filename, co.name company FROM dz_docs d JOIN dz_files f ON f.id=d.file_id
+                LEFT JOIN dz_companies co ON co.id=d.company_id WHERE {w}
+                ORDER BY {dd} DESC, d.id DESC LIMIT 300 OFFSET ?""", args + [max(0, offset)]).fetchall()
             out = []
             for d in rows:
-                if status != "all" and d["status"] != status:
-                    continue
-                if d["status"] == "trashed":
-                    continue
-                v = _values(d)
-                if kind and v.get("kind") != kind:
-                    continue
-                if company_id and d["company_id"] != company_id:
-                    continue
-                dd = v.get("doc_date") or (d["created_at"] or "")[:10]
-                if frm and dd < frm or to and dd > to:
-                    continue
-                out.append({"id": d["id"], "status": d["status"], "kind": v.get("kind"), "company": d["company"] or v.get("counterparty"),
-                            "company_id": d["company_id"], "doc_no": v.get("doc_no"), "doc_date": v.get("doc_date"), "amount": v.get("amount"),
-                            "due_on": v.get("due_on"), "title": v.get("title"), "file_id": d["file_id"], "page_from": d["page_from"] or 1,
+                v = _values(d) if d["status"] != "confirmed" else {}
+                out.append({"id": d["id"], "status": d["status"], "kind": d["kind"] or v.get("kind"), "company": d["company"] or d["counterparty_raw"] or v.get("counterparty"),
+                            "company_id": d["company_id"], "doc_no": d["doc_no"] or v.get("doc_no"), "doc_date": d["doc_date"] or v.get("doc_date"),
+                            "amount": d["amount"] if d["amount"] is not None else v.get("amount"), "direction": d["direction"],
+                            "due_on": d["due_on"], "title": d["title"] or v.get("title"), "file_id": d["file_id"], "page_from": d["page_from"] or 1,
                             "filename": d["filename"]})
-            out.sort(key=lambda x: (x.get("doc_date") or ""), reverse=True)
-        return {"docs": out[:300], "mode": FTS["mode"]}
+        return {"docs": out, "total": total, "mode": FTS["mode"]}
 
     # ── 案件の書類（営業の案件画面から） ──
     @r.get("/deals/{deal_id}/docs")

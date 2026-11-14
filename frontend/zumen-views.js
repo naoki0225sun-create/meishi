@@ -167,14 +167,14 @@ function drawingTile(dw, badge = '') {
 }
 
 // ── 図面（一覧と検索） ──
-const DW = { q: storeGet('zumen.dq') || '', company: '', material: '', mode: 'drawings' };
+const DW = { q: storeGet('zumen.dq') || '', company: '', material: '', mode: 'drawings', f: { kind: '', dir: '', from: '', to: '', amin: '', amax: '' } };
 ZVIEWS.drawings = async () => {
   const cos = await companyList();
   VP().innerHTML = `
     <div class="zs-bar">
       <div class="search-field zs-q">${ico('search', 15)}<input type="search" id="dwQ" placeholder="図番・品名・材質・会社名、書類内の文字で検索" value="${esc(DW.q)}"></div>
       <select class="email-input compact" id="dwCo"><option value="">すべての会社</option>${cos.map(c => `<option value="${c.id}" ${String(c.id) === DW.company ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
-      <div class="seg" id="dwMode"><button data-m="drawings" class="${DW.mode === 'drawings' ? 'is-on' : ''}">図番</button><button data-m="docs" class="${DW.mode === 'docs' ? 'is-on' : ''}">書類の本文まで</button>
+      <div class="seg" id="dwMode"><button data-m="drawings" class="${DW.mode === 'drawings' ? 'is-on' : ''}">図番</button><button data-m="docs" class="${DW.mode === 'docs' ? 'is-on' : ''}">書類を探す</button>
         <button data-m="ask" class="${DW.mode === 'ask' ? 'is-on' : ''}">${ico('sparkle', 12)} AIに質問</button></div>
       <label class="btn-sm" title="お手元の図面やスマホで撮った写真と、形が似た図面を探します（登録はされません）">${ico('image', 13)} 画像で探す<input type="file" id="dwImg" accept="application/pdf,image/*" hidden></label>
     </div>
@@ -219,18 +219,56 @@ async function drawDrawings() {
     return;
   }
   $('dwQ').placeholder = '図番・品名・材質・会社名、書類内の文字で検索';
-  if (DW.mode === 'docs') {
-    const r = await api(`/api/zumen/search?q=${encodeURIComponent(DW.q)}${DW.company ? `&company_id=${DW.company}` : ''}`);
-    body.innerHTML = r.docs.length ? `<table class="zr-table ro zc-docs"><thead><tr><th></th><th>種類</th><th>会社</th><th>日付</th><th>番号</th><th>件名</th><th class="num">金額</th></tr></thead><tbody>
-      ${r.docs.map(d => `<tr data-open-doc="${d.id}"><td>${thumb(d.file_id, d.page_from, 'sm')}</td><td>${kindBadge(d.kind)}</td><td>${esc(d.company || '')}</td><td>${fmtDate(d.doc_date)}</td><td>${esc(d.doc_no || '')}</td><td>${esc(d.title || d.filename)}</td><td class="num">${yen(d.amount)}</td></tr>`).join('')}</tbody></table>`
-      : `<div class="boss-empty">${DW.q ? '見つかりませんでした' : '書類はまだありません'}</div>`;
-    body.querySelectorAll('[data-open-doc]').forEach(tr => tr.onclick = () => setView('doc', { id: Number(tr.dataset.openDoc) }));
-    return;
-  }
+  if (DW.mode === 'docs') return drawDocSearch(body);
   const r = await api(`/api/zumen/drawings?q=${encodeURIComponent(DW.q)}${DW.company ? `&company_id=${DW.company}` : ''}`);
   body.innerHTML = r.drawings.length ? `<div class="zg">${r.drawings.map(drawingTile).join('')}</div>`
-    : `<div class="boss-empty">${DW.q ? '図番では見つかりませんでした。「書類の本文まで」に切り替えると、図面に書かれた文字も検索します' : 'まだ図面はありません。図面のPDFを追加して確定すると、ここに表示されます'}</div>`;
+    : `<div class="boss-empty">${DW.q ? '図番では見つかりませんでした。「書類を探す」に切り替えると、書類や図面に書かれた文字も検索します' : 'まだ図面はありません。図面のPDFを追加して確定すると、ここに表示されます'}</div>`;
   body.querySelectorAll('[data-open-drawing]').forEach(b => b.onclick = () => setView('drawing', { id: Number(b.dataset.openDrawing) }));
+}
+
+// ── 書類を探す（取引先・日付の範囲・金額の範囲・種類・本文の文字） ──
+async function drawDocSearch(body) {
+  const f = DW.f;
+  if (!body.querySelector('#dsBar')) {
+    body.innerHTML = `<div class="zs-filters" id="dsBar">
+        <label>種類<select class="email-input compact" id="dsKind"><option value="">すべて</option>${Z.meta.kinds.map(k => `<option ${k === f.kind ? 'selected' : ''}>${esc(k)}</option>`).join('')}</select></label>
+        <label>受け取り／発行<select class="email-input compact" id="dsDir"><option value="">両方</option><option ${f.dir === '受け取り' ? 'selected' : ''}>受け取り</option><option ${f.dir === '発行' ? 'selected' : ''}>発行</option></select></label>
+        <label>日付<span class="zs-range"><input type="date" class="email-input compact" id="dsFrom" value="${esc(f.from)}"><span>〜</span><input type="date" class="email-input compact" id="dsTo" value="${esc(f.to)}"></span></label>
+        <label>金額（円）<span class="zs-range"><input type="number" inputmode="numeric" class="email-input compact zs-num" id="dsAmin" placeholder="下限" value="${esc(f.amin)}"><span>〜</span><input type="number" inputmode="numeric" class="email-input compact zs-num" id="dsAmax" placeholder="上限" value="${esc(f.amax)}"></span></label>
+        <button class="btn-link" id="dsClear">条件をクリア</button>
+      </div><div id="dsOut"><div class="empty-text">読み込み中…</div></div>`;
+    const bind = (id, key) => { $(id).onchange = e => { f[key] = e.target.value.trim(); drawDocSearch(body); }; };
+    bind('dsKind', 'kind'); bind('dsDir', 'dir'); bind('dsFrom', 'from'); bind('dsTo', 'to'); bind('dsAmin', 'amin'); bind('dsAmax', 'amax');
+    $('dsClear').onclick = () => { DW.f = { kind: '', dir: '', from: '', to: '', amin: '', amax: '' }; body.innerHTML = ''; drawDocSearch(body); };
+  }
+  const p = new URLSearchParams();
+  if (DW.q) p.set('q', DW.q);
+  if (DW.company) p.set('company_id', DW.company);
+  if (f.kind) p.set('kind', f.kind);
+  if (f.dir) p.set('direction', f.dir);
+  if (f.from) p.set('from', f.from);
+  if (f.to) p.set('to', f.to);
+  if (f.amin !== '') p.set('amount_min', f.amin);
+  if (f.amax !== '') p.set('amount_max', f.amax);
+  const out = $('dsOut');
+  let r;
+  try { r = await api(`/api/zumen/search?${p}`); } catch (e) { out.innerHTML = `<div class="boss-empty">${esc(e.message)}</div>`; return; }
+  const filtered = [...p.keys()].length > 0;
+  if (!r.docs.length) { out.innerHTML = `<div class="boss-empty">${filtered ? '条件に当てはまる書類はありません' : '確定した書類はまだありません'}</div>`; return; }
+  const sum = r.docs.reduce((a, d) => a + (Number(d.amount) || 0), 0);
+  out.innerHTML = `<div class="zs-count"><span>${r.total.toLocaleString()}件${r.total > r.docs.length ? `（新しい順に${r.docs.length}件を表示しています。条件を絞り込んでください）` : ''}　表示中の金額合計 ${yen(sum)}</span>
+      <button class="btn-sm" id="dsCsv">${ico('download', 13)} CSVで書き出す</button></div>
+    <div class="zs-scroll"><table class="zr-table ro zc-docs"><thead><tr><th></th><th>種類</th><th>取引先</th><th>日付</th><th>番号</th><th>件名</th><th class="num">金額</th></tr></thead><tbody>
+    ${r.docs.map(d => `<tr data-open-doc="${d.id}"><td>${thumb(d.file_id, d.page_from, 'sm')}</td><td>${kindBadge(d.kind)}${d.direction === '発行' ? '<small class="zs-dir">発行</small>' : ''}</td><td>${esc(d.company || '')}</td><td>${fmtDate(d.doc_date)}</td><td>${esc(d.doc_no || '')}</td><td>${esc(d.title || d.filename)}</td><td class="num">${yen(d.amount)}</td></tr>`).join('')}</tbody></table></div>`;
+  out.querySelectorAll('[data-open-doc]').forEach(tr => tr.onclick = () => setView('doc', { id: Number(tr.dataset.openDoc) }));
+  $('dsCsv').onclick = () => {
+    const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const rows = [['種類', '受け取り／発行', '取引先', '日付', '番号', '件名', '金額', 'ファイル名', '書類のリンク'].map(q).join(',')]
+      .concat(r.docs.map(d => [d.kind, d.direction, d.company, d.doc_date, d.doc_no, d.title, d.amount, d.filename, `${location.origin}/zumen.html?doc=${d.id}`].map(q).join(',')));
+    const blob = new Blob(['\ufeff' + rows.join('\r\n')], { type: 'text/csv' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `書類一覧_${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  };
 }
 
 // ── 図面1件 ──
