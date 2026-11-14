@@ -1,6 +1,7 @@
 #!/bin/bash
 # 「本当に戻せるか」の確認（毎月1日 4:30）。最新のDBの写しを開いて件数を数え、原本を20件選んで中身が一致するか確かめる
 set -uo pipefail
+umask 077   # 写しは root と本体だけが読めるように（同じVPSのほかのアプリから読めないように）
 BE=${BE:-/var/meishi/backend}
 LOCAL=${DZ_BACKUP_DIR:-/var/meishi/backup-zumen}
 ENVF=$BE/.env

@@ -5,6 +5,7 @@
 # - .env に R2 の鍵があれば R2 へ（DZ_BACKUP_PASSWORD があれば中身もファイル名も暗号化）。なければ VPS 内に退避
 # - 結果は /var/meishi/backup-zumen/last.json に書き、図面タブの「設定」に出る
 set -uo pipefail
+umask 077   # 写しは root と本体だけが読めるように（同じVPSのほかのアプリから読めないように）
 BE=${BE:-/var/meishi/backend}
 LOCAL=${DZ_BACKUP_DIR:-/var/meishi/backup-zumen}
 ENVF=$BE/.env

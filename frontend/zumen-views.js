@@ -36,7 +36,7 @@ ZVIEWS.doc = async ({ id }) => {
           ${docs.length ? `<div class="zr-sec"><div class="zr-label">関連する書類</div>${docs.map(x => `<a class="zr-rel" href="/zumen.html?doc=${x.target_id}">${ico('doc', 13)} ${esc(x.label)}</a>`).join('')}</div>` : ''}
           ${(d.revisions || []).length ? `<div class="zr-sec"><div class="zr-label">この書類の図面</div>${d.revisions.map(x => `<a class="zr-rel" href="/zumen.html?drawing=${x.drawing_id}">${ico('drawing', 13)} ${esc(x.drawing_no)} ${esc(x.rev || '初版')}</a>`).join('')}</div>` : ''}
           ${(v.lines || []).length ? `<div class="zr-sec"><div class="zr-label">明細</div><div class="zr-table-wrap"><table class="zr-table ro"><thead><tr><th>図番</th><th>版</th><th>品名</th><th class="num">数量</th><th class="num">単価</th><th class="num">金額</th><th>納期</th></tr></thead>
-            <tbody>${v.lines.map(l => `<tr><td>${esc(l.drawing_no)}</td><td>${esc(l.rev)}</td><td>${esc(l.name)}</td><td class="num">${l.qty ?? ''}</td><td class="num">${yen(l.unit_price)}</td><td class="num">${yen(l.amount)}</td><td>${fmtMD(l.due_on)}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
+            <tbody>${v.lines.map(l => `<tr><td>${esc(l.drawing_no)}</td><td>${esc(l.rev)}</td><td>${esc(l.name)}</td><td class="num">${esc(l.qty ?? '')}</td><td class="num">${yen(l.unit_price)}</td><td class="num">${yen(l.amount)}</td><td>${fmtMD(l.due_on)}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
           <div class="zr-actions">
             ${d.status === 'confirmed' ? `<button class="btn-sm" id="shareDocBtn">${ico('share', 13)} 社外に共有</button>` : ''}
             ${d.undo_event ? `<button class="btn-sm" id="undoBtn">${ico('undo', 13)} 確定を取り消して確認待ちに戻す</button>` : ''}
@@ -259,7 +259,7 @@ ZVIEWS.drawing = async ({ id, rev }) => {
       + (r.deals.length ? `<div class="zr-label" style="margin-top:12px">案件</div>${r.deals.map(x => `<a class="zr-rel" href="/sales.html?deal=${x.id}">#${x.id} ${esc(x.title)} <span class="stage-badge" data-stage="${esc(x.stage)}">${esc(x.stage)}</span></a>`).join('')}` : '')
       : '<div class="boss-empty">まだありません</div>',
     prices: r.prices.length ? `<table class="zr-table ro"><thead><tr><th>日付</th><th>書類</th><th>版</th><th class="num">数量</th><th class="num">単価</th><th class="num">金額</th></tr></thead><tbody>
-        ${r.prices.map(p => `<tr data-open-doc="${p.doc_id}"><td>${fmtDate(p.doc_date)}</td><td>${kindBadge(p.kind)} ${esc(p.doc_no || '')}</td><td>${esc(p.rev || '')}</td><td class="num">${p.qty ?? ''}</td><td class="num">${yen(p.unit_price)}</td><td class="num">${yen(p.amount)}</td></tr>`).join('')}</tbody></table>`
+        ${r.prices.map(p => `<tr data-open-doc="${p.doc_id}"><td>${fmtDate(p.doc_date)}</td><td>${kindBadge(p.kind)} ${esc(p.doc_no || '')}</td><td>${esc(p.rev || '')}</td><td class="num">${esc(p.qty ?? '')}</td><td class="num">${yen(p.unit_price)}</td><td class="num">${yen(p.amount)}</td></tr>`).join('')}</tbody></table>`
       : '<div class="boss-empty">注文書・見積書の明細にこの図番が出てくると、単価の履歴がたまります</div>',
     notes: `<div class="zt-note-form"><select class="email-input compact" id="nKind">${noteKinds.map(k => `<option>${k}</option>`).join('')}</select>
         <input class="email-input compact" id="nBody" placeholder="加工のコツ・不具合の内容など">
@@ -268,9 +268,9 @@ ZVIEWS.drawing = async ({ id, rev }) => {
       ${r.notes.map(n => `<div class="zt-memo k-${esc(n.kind)}">${n.photo_file_id ? `<img src="${ZV.pageUrl(n.photo_file_id, 1, 'thumb')}" data-photo="${n.photo_file_id}">` : ''}
         <div><span class="zt-mk">${esc(n.kind)}</span> ${esc(n.body || '')}<small>${fmtDate(n.created_at)} ${esc(n.author || '')}</small></div>
         <button class="zr-x" data-del-note="${n.id}" title="消す">×</button></div>`).join('') || '<div class="boss-empty">まだメモはありません。不具合を記録しておくと、次に同じ図番の注文が来たときにお知らせします</div>'}`,
-    bom: `${r.parents.length ? `<div class="zr-label">この図番を使う組立図</div>${r.parents.map(p => `<button class="zr-rel" data-open-drawing="${p.id}">${ico('layers', 13)} ${esc(p.drawing_no)} ${esc(p.name || '')} <small>${esc(p.rev || '初版')}　×${p.qty ?? 1}</small>${p.child_newer ? '<span class="zr-st zst-warn">部品のほうが新しい版です</span>' : ''}</button>`).join('')}` : ''}
+    bom: `${r.parents.length ? `<div class="zr-label">この図番を使う組立図</div>${r.parents.map(p => `<button class="zr-rel" data-open-drawing="${p.id}">${ico('layers', 13)} ${esc(p.drawing_no)} ${esc(p.name || '')} <small>${esc(p.rev || '初版')}　×${esc(p.qty ?? 1)}</small>${p.child_newer ? '<span class="zr-st zst-warn">部品のほうが新しい版です</span>' : ''}</button>`).join('')}` : ''}
       <div class="zr-label" style="margin-top:10px">この組立図の部品</div>
-      ${r.children.map(ch => `<div class="zt-child"><button class="zr-rel" data-open-drawing="${ch.id}">${ico('drawing', 13)} ${esc(ch.drawing_no)} ${esc(ch.name || '')} <small>${esc(ch.rev || '版なし')}</small></button><span>×${ch.qty ?? 1}</span><button class="zr-x" data-del-bom="${ch.bom_id}">×</button></div>`).join('') || '<div class="boss-empty">部品の登録はありません</div>'}
+      ${r.children.map(ch => `<div class="zt-child"><button class="zr-rel" data-open-drawing="${ch.id}">${ico('drawing', 13)} ${esc(ch.drawing_no)} ${esc(ch.name || '')} <small>${esc(ch.rev || '版なし')}</small></button><span>×${esc(ch.qty ?? 1)}</span><button class="zr-x" data-del-bom="${ch.bom_id}">×</button></div>`).join('') || '<div class="boss-empty">部品の登録はありません</div>'}
       <div class="zt-note-form"><input class="email-input compact" id="bNo" placeholder="部品の図番"><input class="email-input compact" id="bName" placeholder="品名"><input type="number" class="email-input compact w-s" id="bQty" value="1" min="1"><button class="btn-sm" id="bAdd">部品を追加</button></div>`,
     similar: `<div class="zr-label">形が似た図面</div><div id="simImg"><div class="empty-text">探しています…</div></div>
       <div class="zr-label" style="margin-top:12px">材質・板厚・品名が近い図面</div>
@@ -451,7 +451,7 @@ ZVIEWS.site = async ({ deal } = {}) => {
     ${r.items.map((x, i) => `<div class="st-card s-${x.state} ${deal && x.deal_id === deal ? 'is-focus' : ''}" ${x.deal_id ? `id="st-${x.deal_id}"` : ''}>
       <div class="st-top"><div><div class="st-co">${esc(x.company || '')}</div><div class="st-title">${esc(x.title || '')}</div></div>
         <div class="st-due ${x.days_left != null && x.days_left < 0 ? 'bad' : x.days_left != null && x.days_left <= 7 ? 'warn' : ''}">${x.due ? `納期 ${fmtMD(x.due)}<small>${x.days_left < 0 ? `${-x.days_left}日遅れ` : x.days_left === 0 ? '今日' : `あと${x.days_left}日`}</small>` : '納期未設定'}</div></div>
-      ${x.lines.length ? `<div class="st-lines">${x.lines.map(l => `<span>${esc(l.drawing_no || '')} ${esc(l.name || '')}${l.qty ? ` <b>×${l.qty}</b>` : ''}</span>`).join('')}</div>` : ''}
+      ${x.lines.length ? `<div class="st-lines">${x.lines.map(l => `<span>${esc(l.drawing_no || '')} ${esc(l.name || '')}${l.qty ? ` <b>×${esc(l.qty)}</b>` : ''}</span>`).join('')}</div>` : ''}
       <div class="st-dws">${x.drawings.map(dw => `<button class="st-dw" data-site-dw="${i}:${dw.id}">
           ${dw.file_id ? thumb(dw.file_id, dw.page_no || 1) : `<div class="zg-noimg">${ico('drawing', 26)}</div>`}
           <div class="st-dw-no">${esc(dw.drawing_no)} <b>${esc(dw.rev || '初版')}</b></div>

@@ -187,9 +187,14 @@ def flatten(doc: dict) -> tuple:
     def scale_of(m):
         return math.sqrt(abs(m[0] * m[3] - m[1] * m[2])) or 1
 
+    budget = [MAX_ENT * 3]   # ブロックの入れ子で描く量が爆発しないよう、全体で描く数に上限を置く
+
     def walk(ents, m, depth):
         i = 0
         while i < len(ents):
+            budget[0] -= 1
+            if budget[0] < 0:
+                return
             e = ents[i]
             t, g = e["type"], e["g"]
             i += 1

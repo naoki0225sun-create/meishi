@@ -237,10 +237,25 @@ def _pdf_text(path: str, n: int) -> str:
         return ""
 
 
+def _safe_dpi(path: str, n: int, dpi: int, max_px: int = 9000) -> int:
+    """極端に大きいページ（巨大な用紙サイズを書いたPDF）で画像が何GBにもならないよう、長い辺を max_px までに抑える"""
+    try:
+        out = subprocess.run(["pdfinfo", "-f", str(n), "-l", str(n), path], capture_output=True, text=True, timeout=30).stdout
+        m = re.search(r"Page\s+%d\s+size:\s+([\d.]+)\s+x\s+([\d.]+)" % n, out) or re.search(r"Page size:\s+([\d.]+)\s+x\s+([\d.]+)", out)
+        if m:
+            longest = max(float(m.group(1)), float(m.group(2))) / 72   # インチ
+            if longest > 0 and longest * dpi > max_px:
+                return max(10, int(max_px / longest))
+    except Exception:
+        pass
+    return dpi
+
+
 def _pdf_render(path: str, n: int, dpi: int = 110):
     from PIL import Image
     with tempfile.TemporaryDirectory() as td:
         base = os.path.join(td, "p")
+        dpi = _safe_dpi(path, n, dpi)
         subprocess.run(["pdftoppm", "-f", str(n), "-l", str(n), "-r", str(dpi), "-jpeg", "-jpegopt", "quality=88", path, base],
                        capture_output=True, timeout=180, check=True)
         outs = sorted(f for f in os.listdir(td) if f.endswith(".jpg"))

@@ -164,6 +164,30 @@ app.add_middleware(
 )
 
 
+_ALLOWED_ORIGINS = {o.strip().rstrip("/") for o in os.getenv("CORS_ORIGINS", "https://meishi.wako-apps.com").split(",") if o.strip()}
+
+
+@app.middleware("http")
+async def _guard_and_headers(request, call_next):
+    """よそのサイト（同じ wako-apps.com の別サイトを含む）からの書き込みを断り、基本の安全ヘッダーを付ける。
+    Slack などサーバー同士の呼び出しは Origin を付けないので影響しない"""
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        origin = (request.headers.get("origin") or "").rstrip("/")
+        if origin and origin != "null":
+            host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+            if origin not in _ALLOWED_ORIGINS and origin not in (f"https://{host}", f"http://{host}"):
+                from fastapi.responses import JSONResponse
+                return JSONResponse({"detail": "この操作は受け付けられません（別のサイトからの送信です）"}, status_code=403)
+        elif origin == "null":
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"detail": "この操作は受け付けられません"}, status_code=403)
+    resp = await call_next(request)
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    return resp
+
+
 @app.on_event("startup")
 def on_startup():
     db.init_db()

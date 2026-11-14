@@ -611,6 +611,17 @@ def build_router(check_session: Callable, fetch_cards: Callable, get_tenant: Opt
             c.commit()
         return {"ok": True}
 
+    def pdf_pages_only(data: bytes, pages: list) -> bytes:
+        from pypdf import PdfReader, PdfWriter
+        rd = PdfReader(io.BytesIO(data))
+        wr = PdfWriter()
+        for p in pages:
+            if 1 <= p <= len(rd.pages):
+                wr.add_page(rd.pages[p - 1])
+        buf = io.BytesIO()
+        wr.write(buf)
+        return buf.getvalue()
+
     def share_of(c, token: str):
         s = c.execute("SELECT * FROM dz_shares WHERE token=?", (token,)).fetchone()
         if not s or s["revoked_at"] or s["expires_at"] < _now():
@@ -676,9 +687,22 @@ def build_router(check_session: Callable, fetch_cards: Callable, get_tenant: Opt
                 raise HTTPException(404, "ファイルがありません")
             f = c.execute("SELECT * FROM dz_files WHERE id=?", (pages[0][0],)).fetchone()
         data = storage.get_store().get(f["storage_key"])
+        if data is None:
+            raise HTTPException(404, "ファイルがありません")
+        # 1つのファイルに別の書類のページも入っている（FAXをまとめて読み込んだ等）ときは、共有したページだけを渡す
+        want = sorted({p for fid, p, _ in pages if fid == f["id"]})
+        total = f["pages"] or 1
+        mime = f["mime"] if f["mime"] != "application/cad" else "application/octet-stream"
+        name = f["filename"] or "file"
+        if want != list(range(1, total + 1)):
+            if mime != "application/pdf":
+                raise HTTPException(403, "このファイルには共有していない部分が含まれるため、ダウンロードできません")
+            data = pdf_pages_only(data, want)
+            name = re.sub(r"(\.pdf)?$", "", name, flags=re.I) + f"_p{want[0]}" + (f"-{want[-1]}" if len(want) > 1 else "") + ".pdf"
         from urllib.parse import quote
-        return Response(data, media_type=f["mime"] if f["mime"] != "application/cad" else "application/octet-stream",
-                        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(f['filename'] or 'file')}", "X-Robots-Tag": "noindex"})
+        return Response(data, media_type=mime,
+                        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}", "X-Robots-Tag": "noindex",
+                                 "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"})
 
     # ── メール取り込みの状態 ──
     @r.get("/mail/status")

@@ -117,7 +117,7 @@
         <div class="sec">製作するもの</div>
         <table><thead><tr><th>図番</th><th>版</th><th>品名</th><th>材質</th><th>板厚</th><th class="num">数量</th><th>納期</th><th>済</th></tr></thead><tbody>
           ${d.lines.map(l => `<tr><td>${esc(l.drawing_no || '')}</td><td>${esc(l.rev || '')}</td><td>${esc(l.name || '')}</td><td>${esc(l.material || '')}</td><td>${esc(l.thickness || '')}</td>
-            <td class="num"><b>${l.qty ?? ''}</b></td><td>${esc(l.due_on ? md(l.due_on) : '')}</td><td><span class="check"></span></td></tr>`).join('') || '<tr><td colspan="8">注文書の明細がありません</td></tr>'}</tbody></table>
+            <td class="num"><b>${esc(l.qty ?? '')}</b></td><td>${esc(l.due_on ? md(l.due_on) : '')}</td><td><span class="check"></span></td></tr>`).join('') || '<tr><td colspan="8">注文書の明細がありません</td></tr>'}</tbody></table>
         ${d.milestones.length ? `<div class="sec">工程の予定（納期から逆算）</div><table><thead><tr>${d.milestones.map(m => `<th>${esc(m.label)}</th>`).join('')}</tr></thead>
           <tbody><tr>${d.milestones.map(m => `<td>${esc(md(m.plan))}${m.done ? '<br><b>済</b>' : ''}</td>`).join('')}</tr></tbody></table>` : ''}
         <div class="sec">図面（印刷時点の最新版。版はQRコードで確認してください）</div>
