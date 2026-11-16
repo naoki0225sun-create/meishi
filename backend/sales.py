@@ -1773,11 +1773,13 @@ def build_router(check_session: Callable, fetch_cards: Callable,
         if d.get("vendor_id"):
             with _conn() as c:
                 d["vendor_name"] = vendor_names(c, t).get(d["vendor_id"])
-        try:   # 業者が入れた会社の情報（住所・公式サイトなど）
-            vi = json.loads(d.get("vendor_contact") or "{}")
-            d["vendor_info"] = {k: vi.get(k) for k in ("department", "zip", "address", "industry", "web", "fax", "mobile") if vi.get(k)} if isinstance(vi, dict) else {}
-        except (TypeError, ValueError):
-            d["vendor_info"] = {}
+        # テレアポ業者の入力（業者の画面と同じデータをそのまま読む）。開いたら「業者の更新あり」を見たことにする
+        import vendor
+        with _conn() as c:
+            d["vendor_entry"] = vendor.staff_view(c, t, row, card)
+            if d["vendor_entry"] and d["vendor_entry"]["new"]:
+                vendor.mark_staff_seen(c, t, deal_id)
+                c.commit()
         d["same_site"] = []
         k = norm_site(d.get("site_name"))
         with _conn() as c:

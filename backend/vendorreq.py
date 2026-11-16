@@ -190,6 +190,8 @@ def _apply_result(c, req, vendor: dict, result: Optional[str], memo: Optional[st
     c.execute("UPDATE activities SET vendor_id=?, vendor_visible=1 WHERE id=?", (vendor["id"], act))
     if sets:
         sales.apply_sets(c, t, target, sets)
+    import vendor
+    vendor.touch(c, target, ["call"])   # こちらの案件に「業者の更新あり」
     return title
 
 

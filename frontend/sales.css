@@ -691,6 +691,23 @@ body.board-mode .split-handle { display: none; }
 .vendor-issued textarea { margin: 8px 0; font-size: 12.5px; }
 .vendor-add { display: flex; gap: 8px; margin-top: 10px; }
 .vendor-add input { flex: 1; }
+/* 案件の概要：テレアポ業者の入力 */
+.ve-sec { border: 1px solid #f5c2dd; background: #fff7fb; border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; min-width: 0; }
+.ve-sec.is-new { border-color: #F2C76E; box-shadow: 0 0 0 3px #FFF3DA; }
+.ve-note { font-size: 11.5px; color: #a86a12; }
+.ve-grid { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; margin: 6px 0 4px; font-size: 13px; }
+.ve-grid dt { color: var(--gray-500); }
+.ve-grid dd { margin: 0; overflow-wrap: anywhere; }
+.ve-grid dd.is-changed { background: #FFF3DA; border-radius: 4px; padding: 0 4px; }
+.ve-chg { font-size: 10.5px; font-weight: 700; color: #a86a12; margin-left: 6px; }
+.ve-diff { font-size: 11.5px; color: #a86a12; margin-top: 1px; }
+.ve-diff::before { content: "≠ "; }
+.ve-calls-h { font-size: 12px; font-weight: 700; color: #a3236d; margin: 10px 0 4px; }
+.ve-call { border-top: 1px dashed #f5c2dd; padding: 6px 0; }
+.ve-call-h { display: flex; gap: 8px; font-size: 12px; color: var(--gray-500); }
+.ve-res, .ve-kind { font-weight: 700; color: #a3236d; }
+.ve-call-b { font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 2px; }
+.ve-calls.is-folded .ve-call.is-more { display: none; }
 
 /* ── メモ（案件の上・AIで整理） ── */
 .mm { margin-top: 12px; border: 1px solid #dfe6fb; background: #fafbff; border-radius: 14px; padding: 10px 12px; }

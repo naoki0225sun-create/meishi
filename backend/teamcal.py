@@ -103,7 +103,7 @@ def _deal_place(c, d) -> dict:
             addr, tel = addr or p["address"], tel or p["tel"]
     zip_ = ct.get("zip")
     return {"address": " ".join(x for x in (("〒" + zip_.lstrip("〒")) if zip_ else None, addr) if x) or None, "area": area_of(addr),
-            "contact": " ".join(x for x in (ct.get("department"), ct.get("contact") or d["contact_snapshot"]) if x) or None,
+            "contact": __import__("vendor").contact_line(ct.get("department"), __import__("vendor").blank(ct.get("contact")) or d["contact_snapshot"]) or None,
             "phone": tel, "company": d["company_snapshot"]}
 
 

@@ -799,7 +799,8 @@ def vendor_deal_lines(tenant_id: str, deal_id: int, memo: Optional[str] = None) 
             ORDER BY id DESC LIMIT 1""", (deal_id,)).fetchone()
         docs = c.execute("""SELECT docs FROM vendor_requests WHERE deal_id=? AND kind='docs' AND status='requested'
             ORDER BY id DESC LIMIT 1""", (deal_id,)).fetchone()
-    who = " ".join(x for x in (ct.get("department"), ct.get("contact") or d.get("contact_snapshot")) if x)
+    import vendor as _vendor
+    who = _vendor.contact_line(ct.get("department"), _vendor.blank(ct.get("contact")) or d.get("contact_snapshot"))
     tel = ct.get("phone") or d.get("phone_snapshot") or p.get("tel")
     addr = " ".join(x for x in ((("〒" + ct["zip"].lstrip("〒")) if ct.get("zip") else None), ct.get("address") or p.get("address")) if x)
     rows = [("相手", who), ("電話", tel), ("携帯", ct.get("mobile")), ("メール", ct.get("email") or d.get("email_snapshot")),

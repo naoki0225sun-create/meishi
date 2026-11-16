@@ -253,7 +253,7 @@ function openMoveToBp() {
   $('moveBody').innerHTML = `<div class="ik-help">案件名やメールの件名に「ブループリント」「Blue Print」が入っている案件です。移さないものはチェックを外してください。</div>`
     + S.bpCandidates.map(d => `
       <label class="move-row"><input type="checkbox" value="${d.id}" checked>
-        <span class="move-main"><b>#${d.id} ${esc(d.title)}</b><small>${esc(d.company_snapshot || '')} ${esc(d.contact_snapshot || '')}</small></span>
+        <span class="move-main"><b>#${d.id} ${esc(d.title)}</b><small>${esc(d.company_snapshot || '')} ${esc(vblank(d.contact_snapshot))}</small></span>
         <span class="move-stage">${esc(d.stage)} → <b>${esc(d.new_stage)}</b></span></label>`).join('');
   $('moveApply').onclick = async () => {
     const ids = [...$('moveBody').querySelectorAll('input:checked')].map(i => Number(i.value));
@@ -603,7 +603,7 @@ function renderDetail() {
   if (!d) return;
   const card = d.card || {};
   const company = card.company || d.company_snapshot || '';
-  const person = card.name || d.contact_snapshot || '';
+  const person = card.name || vblank(d.contact_snapshot);
   const pl = pipeOf(d);
   const stages = pl.stages;
   const curIdx = stages.indexOf(d.stage);
@@ -712,6 +712,7 @@ function renderDetail() {
       <nav class="dtabs" role="tablist">${tabHtml}</nav>
 
       ${pane('overview', `
+        ${vendorEntryHtml(d)}
         ${vqSectionHtml(d)}
         <div class="ov-grid">
           <div class="detail-section ov-info">

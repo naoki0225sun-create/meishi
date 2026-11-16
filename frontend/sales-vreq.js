@@ -81,7 +81,7 @@ function vqCardHtml(r) {
   const s = r.share || {}, dc = r.docs || {};
   const title = r.kind === 'recall' ? `${ico('phone')} 再テレアポ・${esc(r.purpose || '')}` : `${ico('doc')} 資料送付`;
   const info = [
-    [s.company, [s.department, s.contact].filter(Boolean).join(' '), s.phone].filter(Boolean).map(esc).join('　'),
+    [s.company, [vblank(s.department), vblank(s.contact)].filter(Boolean).join(' '), s.phone].filter(Boolean).map(esc).join('　'),
     r.kind === 'recall' && r.due_on ? `いつまでに ${esc(fmtDate(r.due_on))}` : '',
     r.kind === 'docs' ? [dc.what ? `資料: ${esc(dc.what)}` : '', dc.to ? `宛先: ${esc(dc.to)}` : '', dc.method ? `送り方: ${esc(dc.method)}` : '',
       dc.address ? `送り先: ${esc(dc.address)}` : '', r.status === 'sent' && r.follow_on ? `到着確認の電話 ${esc(fmtDate(r.follow_on))}ごろ` : ''].filter(Boolean).join('　') : '',
@@ -166,7 +166,7 @@ async function vqOpenDialog(d, kind = 'recall') {
   try { [meta, v] = await Promise.all([vqMeta(), VQ.byDeal[d.id] ? Promise.resolve(VQ.byDeal[d.id]) : vqLoad(d.id)]); }
   catch (e) { showToast(e.message, { type: 'error' }); return; }
   const card = d.card || {};
-  const share = { company: card.company || d.company_snapshot || '', contact: card.name || d.contact_snapshot || '',
+  const share = { company: card.company || d.company_snapshot || '', contact: card.name || vblank(d.contact_snapshot),
     department: card.department_position || '', phone: card.phone || card.mobile || d.phone_snapshot || '' };
   const st = { kind, purpose: '' };
   $('listsModalTitle').textContent = 'テレアポ業者に頼む';

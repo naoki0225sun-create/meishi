@@ -51,6 +51,11 @@ def init_db():
             PRIMARY KEY (vendor_id, deal_id)
         )""")
         sales._add_column(c, "deals", "vendor_contact", "vendor_contact TEXT")   # 業者が入力した連絡先（JSON）
+        # 業者が直した・電話を足した日時と、こちらが案件を開いて見た日時（「業者の更新あり」の印）
+        sales._add_column(c, "deals", "vendor_touched_at", "vendor_touched_at TEXT")
+        sales._add_column(c, "deals", "vendor_staff_seen_at", "vendor_staff_seen_at TEXT")
+        sales._add_column(c, "deals", "vendor_changed", "vendor_changed TEXT")   # こちらが見たあとに業者が直した項目（JSON）
+        _backfill_touched(c)
         c.commit()
     import vendorreq   # 業者とのやりとり（依頼）の表も一緒に作る
     vendorreq.init_db()
@@ -85,6 +90,39 @@ def _drop_sessions(c, vendor_id: int):
     c.execute("DELETE FROM vendor_sessions WHERE vendor_id=?", (vendor_id,))
 
 
+def _backfill_touched(c):
+    """すでに業者が入力した案件：最後に業者が入れた日時を入れておく（見たことにして「更新あり」は付けない）"""
+    rows = c.execute("""SELECT d.id, d.created_at,
+            (SELECT MAX(a.created_at) FROM activities a WHERE a.deal_id=d.id AND a.vendor_id IS NOT NULL) last_act
+        FROM deals d WHERE d.vendor_touched_at IS NULL
+          AND (d.vendor_id IS NOT NULL OR d.vendor_contact IS NOT NULL
+               OR EXISTS (SELECT 1 FROM activities a WHERE a.deal_id=d.id AND a.vendor_id IS NOT NULL))""").fetchall()
+    for r in rows:
+        at = r["last_act"] or r["created_at"]
+        c.execute("UPDATE deals SET vendor_touched_at=?, vendor_staff_seen_at=? WHERE id=?", (at, at, r["id"]))
+
+
+# ── 空欄の扱い ──
+# 業者が「なし」「不明」「—」などと入れた欄は空欄として扱う（「なし 池田 様」のように出さない）
+BLANK_WORDS = {"なし", "無し", "ナシ", "特になし", "とくになし", "不明", "わからない", "分からない", "未確認", "未定", "空欄",
+               "-", "--", "—", "――", "―", "ー", "‐", "－", "–", "n/a", "na", "none", "null", "×", "x", "・", "?", "？"}
+
+
+def blank(v):
+    """空っぽ扱いの値なら None、そうでなければ前後の空白を除いた文字"""
+    if v is None:
+        return None
+    s = str(v).strip().strip("　").strip()
+    if not s:
+        return None
+    k = re.sub(r"[\s。．.、,]+$", "", s.lower())
+    return None if k in BLANK_WORDS else s
+
+
+def _clean_ct(ct: dict) -> dict:
+    return {k: (blank(v) if isinstance(v, str) or v is None else v) for k, v in ct.items()}
+
+
 # ── 業者に見せる形 ──
 STAGE_ARROW = re.compile(r"^(\S+) → (\S+?)(（.*）)?$")
 
@@ -95,6 +133,123 @@ def _contact(row) -> dict:
         return v if isinstance(v, dict) else {}
     except (TypeError, ValueError):
         return {}
+
+
+# ── こちら側に見せる形（業者の入力そのもの。コピーではなく案件の vendor_contact と業者の記録を毎回読む） ──
+STAFF_FIELDS = (("company", "会社名"), ("department", "部署・役職"), ("contact", "担当者"), ("phone", "電話"),
+                ("mobile", "携帯"), ("email", "メール"), ("fax", "FAX"), ("zip", "郵便番号"), ("address", "住所"),
+                ("industry", "業種"), ("web", "公式サイト"))
+# 名刺のどの項目と比べるか（名刺がない案件は、こちらの控え＝案件の会社名・担当者・電話・メールと比べる）
+CARD_KEY = {"company": "company", "department": "department_position", "contact": "name", "phone": "phone",
+            "mobile": "mobile", "email": "email", "address": "address", "web": "website"}
+SNAP_KEY = {"company": "company_snapshot", "contact": "contact_snapshot", "phone": "phone_snapshot", "email": "email_snapshot"}
+RESULT_RE = re.compile(r"：(.+)$")
+
+
+def _same(key: str, a, b) -> bool:
+    import unicodedata
+
+    def n(x):
+        s = unicodedata.normalize("NFKC", str(x or "")).lower()
+        if key == "web":
+            s = re.sub(r"^https?://(www\.)?", "", s).rstrip("/")
+        if key in ("phone", "mobile", "fax", "zip"):
+            return re.sub(r"\D", "", s)
+        if key == "contact":
+            s = re.sub(r"(様|さま|さん|殿)$", "", re.sub(r"\s+", "", s))
+            s = re.sub(r"[（(].*?[)）]", "", s)
+        if key == "company":
+            s = re.sub(r"(株式会社|有限会社|合同会社|\(株\)|\(有\)|㈱|㈲)", "", s)
+        return re.sub(r"[\s　・,、。.\-－ー‐]", "", s)
+    return n(a) == n(b)
+
+
+def _clean_body(body: Optional[str]) -> Optional[str]:
+    """記録の本文から「部署・役職: なし」のような空っぽの行を外し、「相手: なし 池田」を「相手: 池田」にする"""
+    if not body:
+        return body
+    out = []
+    for line in body.split("\n"):
+        m = re.match(r"^(部署・役職|相手|担当者?)\s*[:：]\s*(.*)$", line)
+        if m:
+            words = [w for w in re.split(r"[ 　]+", m.group(2)) if blank(w)]
+            if m.group(1) == "部署・役職":
+                if not blank(m.group(2)):
+                    continue
+            elif not words:
+                continue
+            else:
+                line = f"{m.group(1)}: {' '.join(words)}"
+        out.append(line)
+    return "\n".join(out).strip() or None
+
+
+def contact_line(department, contact) -> str:
+    """部署と担当者をつないだ1行（空っぽ扱いの値は飛ばす）"""
+    return " ".join(x for x in (blank(department), blank(contact)) if x)
+
+
+def staff_view(c, tenant_id: str, row, card: Optional[dict]) -> Optional[dict]:
+    """案件の画面（こちら側）に出す「業者の入力」。業者が記録した案件でなく、業者の記録もなければ None"""
+    row = dict(row)
+    calls = []
+    for a in c.execute("""SELECT id, kind, occurred_at, created_at, title, body, vendor_id FROM activities
+            WHERE tenant_id=? AND deal_id=? AND vendor_id IS NOT NULL ORDER BY occurred_at DESC, id DESC""",
+                       (tenant_id, row["id"])):
+        m = RESULT_RE.search(a["title"] or "")
+        calls.append({"id": a["id"], "kind": a["kind"], "occurred_at": a["occurred_at"], "created_at": a["created_at"],
+                      "title": a["title"], "result": m.group(1) if m else None, "body": _clean_body(a["body"]),
+                      "vendor_id": a["vendor_id"]})
+    if not row.get("vendor_id") and not calls and not row.get("vendor_contact"):
+        return None
+    ct = _clean_ct(_contact(row))
+    fields = []
+    for key, label in STAFF_FIELDS:
+        v = ct.get(key)
+        if not v:
+            continue
+        f = {"key": key, "label": label, "value": v}
+        ours, ours_label = None, None
+        if card and blank(card.get(CARD_KEY.get(key, ""))):
+            ours, ours_label = blank(card.get(CARD_KEY[key])), "名刺"
+        elif not card and key in SNAP_KEY and blank(row.get(SNAP_KEY[key])):
+            ours, ours_label = blank(row.get(SNAP_KEY[key])), "案件の控え"
+        if ours and not _same(key, v, ours):
+            f.update(ours=ours, ours_label=ours_label)   # 食い違い：両方並べる（どちらも上書きしない）
+        fields.append(f)
+    names = sales.vendor_names(c, tenant_id)
+    vid = row.get("vendor_id") or next((x["vendor_id"] for x in calls), None)
+    try:
+        changed = json.loads(row.get("vendor_changed") or "[]")
+    except (TypeError, ValueError):
+        changed = []
+    touched, seen = row.get("vendor_touched_at"), row.get("vendor_staff_seen_at")
+    return {"vendor_id": vid, "vendor_name": names.get(vid) if vid else None, "owned": bool(row.get("vendor_id")),
+            "fields": fields, "conflicts": sum(1 for f in fields if f.get("ours")),
+            "telapo_at": row.get("telapo_at") if row.get("vendor_id") else None,
+            "appo_at": row.get("appo_at") if row.get("vendor_id") else None,
+            "calls": calls, "touched_at": touched,
+            "new": bool(touched and (not seen or touched > seen)),
+            "changed": changed if isinstance(changed, list) else []}
+
+
+def touch(c, deal_id: int, changed: Optional[list] = None):
+    """業者が入力した（直した・電話を足した）。こちらの案件に「業者の更新あり」を付ける"""
+    row = c.execute("SELECT vendor_changed, vendor_touched_at, vendor_staff_seen_at FROM deals WHERE id=?", (deal_id,)).fetchone()
+    prev = []
+    if row and row["vendor_touched_at"] and row["vendor_staff_seen_at"] and row["vendor_touched_at"] > row["vendor_staff_seen_at"]:
+        try:
+            prev = json.loads(row["vendor_changed"] or "[]") or []   # まだこちらが見ていない分に足す
+        except (TypeError, ValueError):
+            prev = []
+    keys = list(dict.fromkeys([*prev, *(changed or [])]))
+    c.execute("UPDATE deals SET vendor_touched_at=?, vendor_changed=? WHERE id=?",
+              (sales._now(), json.dumps(keys, ensure_ascii=False), deal_id))
+
+
+def mark_staff_seen(c, tenant_id: str, deal_id: int):
+    c.execute("UPDATE deals SET vendor_staff_seen_at=?, vendor_changed=NULL WHERE id=? AND tenant_id=? AND vendor_touched_at IS NOT NULL",
+              (sales._now(), deal_id, tenant_id))
 
 
 def visible_acts(c, vendor_id: int, tenant_id: str, deal_id: int) -> list:
@@ -128,7 +283,7 @@ def deal_view(c, vendor: dict, row, detail: bool = False, reqs: Optional[list] =
     last_update = max((a["created_at"] or "" for a in theirs), default="")
     last_id = max((a["id"] for a in theirs), default=0)
     seen = c.execute("SELECT last_act_id FROM vendor_seen WHERE vendor_id=? AND deal_id=?", (vendor["id"], row["id"])).fetchone()
-    ct = _contact(row)
+    ct = _clean_ct(_contact(row))
     # 会社名は業者が入れたもの。なければ（社内で業者を付けた案件）会社名だけ出す。人・連絡先は出さない
     company = ct.get("company") or (row["company_snapshot"] if "company_snapshot" in row.keys() else "") or ""
     out = {"id": row["id"], "title": ct.get("title") or company, "stage": row["stage"],
@@ -150,7 +305,7 @@ def deal_view(c, vendor: dict, row, detail: bool = False, reqs: Optional[list] =
 
 def _requested_view(c, vendor: dict, row, detail: bool, reqs: list) -> dict:
     import vendorreq
-    share = vendorreq._j(reqs[-1]["share"]) if reqs else {}
+    share = _clean_ct(vendorreq._j(reqs[-1]["share"]) if reqs else {})
     mine = [a for a in visible_acts(c, vendor["id"], vendor["tenant_id"], row["id"]) if a["mine"]]
     last = max([r["updated_at"] for r in reqs] + [a["created_at"] or "" for a in mine], default="")
     out = {"id": row["id"], "title": share.get("company") or "", "stage": None, "owned": False,
@@ -515,7 +670,7 @@ def build_router(check_session: Callable, get_tenant: Callable) -> tuple:
             title_act = _apply_call(c, vendor, row, body, sets)
             if "telapo_at" not in sets:
                 sets["telapo_at"] = datetime.now().isoformat(timespec="minutes")
-            body_txt = "\n".join(x for x in ([f"部署・役職: {ct['department']}"] if ct["department"] else []) + ([memo] if memo else []))
+            body_txt = "\n".join(x for x in ([f"部署・役職: {ct['department']}"] if blank(ct["department"]) else []) + ([memo] if memo else []))
             act = sales.log_activity(c, t, deal_id, "call", title_act, body_txt or None, sets["telapo_at"] + ":00"
                                      if len(sets["telapo_at"]) == 16 else None)
             c.execute("UPDATE activities SET vendor_id=?, vendor_visible=1 WHERE id=?", (vendor["id"], act))
@@ -525,6 +680,7 @@ def build_router(check_session: Callable, get_tenant: Callable) -> tuple:
                                       {k: ct.get(k) for k in ("company", "contact", "department", "phone")}, memo, sets.get("telapo_at"))
                 sales.apply_sets(c, t, deal_id, {"next_action": vendorreq.SEND_DOCS, "next_action_due": date.today().isoformat()})
             _mark_seen(c, vendor["id"], deal_id)
+            touch(c, deal_id, ["new"])
             c.commit()
             final = c.execute("SELECT stage, appo_at FROM deals WHERE id=?", (deal_id,)).fetchone()
         _fire({"tenant_id": t, "vendor": vendor["name"], "deal_id": deal_id, "company": company, "new": True,
@@ -564,6 +720,7 @@ def build_router(check_session: Callable, get_tenant: Callable) -> tuple:
                 sales.apply_sets(c, t, deal_id, {"next_action": vendorreq.SEND_DOCS, "next_action_due": date.today().isoformat()})
                 docs_new = True
             _mark_seen(c, vendor["id"], deal_id)
+            touch(c, deal_id, ["call"])
             c.commit()
             final = c.execute("SELECT stage, appo_at, company_snapshot FROM deals WHERE id=?", (deal_id,)).fetchone()
         if final["stage"] != before_stage or docs_new:   # アポが取れたときだけお知らせ（電話の追記ごとには鳴らさない）
@@ -588,6 +745,7 @@ def build_router(check_session: Callable, get_tenant: Callable) -> tuple:
             changed += _extra(body, ct, only_given=True)
             if not ct.get("company"):
                 raise HTTPException(400, "会社名は空にできません")
+            diff = [f for f in dict.fromkeys(changed) if (blank(prev.get(f)) or None) != (blank(ct.get(f)) or None)]
             sets = {"vendor_contact": json.dumps(ct, ensure_ascii=False)}
             if not row["card_id"]:
                 # 名刺がつながる前は、こちらの控えも合わせる。ただしこちらで直した項目は上書きしない
@@ -597,6 +755,15 @@ def build_router(check_session: Callable, get_tenant: Callable) -> tuple:
                     if col and (row[col] or None) == (prev.get(f) or None):
                         sets[col] = ct.get(f)
             sales.apply_sets(c, vendor["tenant_id"], deal_id, sets)
+            if diff:
+                # 何をどう直したかを案件の記録に残す（こちらの案件の「業者の入力」にも、業者の画面にも出る）
+                labels = dict(STAFF_FIELDS)
+                lines = [f"{labels.get(f, f)}: {blank(prev.get(f)) or '（空欄）'} → {blank(ct.get(f)) or '（空欄）'}" for f in diff]
+                act = sales.log_activity(c, vendor["tenant_id"], deal_id, "memo",
+                                         f"連絡先・会社の情報を直しました（{vendor['name']}）", "\n".join(lines))
+                c.execute("UPDATE activities SET vendor_id=?, vendor_visible=1 WHERE id=?", (vendor["id"], act))
+                _mark_seen(c, vendor["id"], deal_id)
+                touch(c, deal_id, diff)
             c.commit()
         return {"ok": True}
 

@@ -124,7 +124,7 @@ async function boardThumbs(ids) {
 
 function boardCard(d) {
   const company = (d.card && d.card.company) || d.company_snapshot || '(会社不明)';
-  const person = (d.card && d.card.name) || d.contact_snapshot || '';
+  const person = (d.card && d.card.name) || vblank(d.contact_snapshot);
   const alert = d.alerts.find(a => a.level !== 'info');
   const boss = (d.advice || []).find(a => a.level === 'high' || a.level === 'mid');
   let due = '';

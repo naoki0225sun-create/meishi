@@ -129,9 +129,13 @@ function bindVendorFilter() {
   };
 }
 
+function vendorUpdated(d) {
+  return !!(d.vendor_touched_at && (!d.vendor_staff_seen_at || d.vendor_touched_at > d.vendor_staff_seen_at));
+}
 function vendorBadge(d) {
-  if (!d.vendor_id) return '';
-  let out = `<span class="vendor-badge" title="テレアポ業者が記録">${ico('phone', 11)} ${esc(d.vendor_name || 'テレアポ')}</span>`;
+  const upd = vendorUpdated(d) ? `<span class="vq-new" title="業者が情報を直した・電話の記録を足した（案件を開くと消えます）">${ico('phone', 11)} 業者の更新あり</span>` : '';
+  if (!d.vendor_id) return upd;
+  let out = upd + `<span class="vendor-badge" title="テレアポ業者が記録">${ico('phone', 11)} ${esc(d.vendor_name || 'テレアポ')}</span>`;
   if (d.is_open && d.appo_at) out += `<span class="due-badge ${d.appo_at.slice(0, 10) < todayStr() ? 'is-late' : ''}" title="アポ日時">${ico('meet', 12)} アポ ${esc(fmtDate(d.appo_at))}${d.appo_at.length > 10 ? ' ' + esc(d.appo_at.slice(11, 16)) : ''}</span>`;
   return out;
 }
@@ -144,26 +148,61 @@ function vendorFieldsHtml(d) {
   return `
     ${d.vendor_id ? `<div class="k">テレアポ業者</div><div class="v"><span class="vendor-badge">${ico('phone', 11)} ${esc(d.vendor_name || '')}</span>
       <div class="kv-note">「業者にも見せる」記録と段階の動きは、業者の画面にも出ます（金額・名刺・社内だけの記録は出ません）</div></div>` : ''}
-    ${vendorInfoHtml(d)}
     <div class="k">架電日時</div><div class="v"><input type="datetime-local" class="email-input compact" id="fTelapo" value="${esc(dt(d.telapo_at))}"></div>
     <div class="k">アポ日時</div><div class="v"><input type="datetime-local" class="email-input compact" id="fAppo" value="${esc(dt(d.appo_at))}">
       <div class="kv-note">カレンダーに出ます。過ぎたら部長が「結果を記録」と声をかけます</div></div>`;
 }
 
-// 業者が入れた会社の情報（住所・公式サイトなど）
-const VINFO = [['department', '部署・役職'], ['zip', '郵便番号'], ['address', '住所'], ['industry', '業種'], ['web', '公式サイト'], ['fax', 'FAX'], ['mobile', '携帯']];
-function vendorInfoHtml(d) {
-  const vi = d.vendor_info || {};
-  const rows = VINFO.filter(([k]) => vi[k]);
-  if (!rows.length) return '';
-  return `<div class="k">業者が入れた会社情報</div><div class="v"><dl class="vinfo">${rows.map(([k, l]) => `<dt>${l}</dt><dd>${k === 'web'
-    ? `<a href="${esc(vi.web)}" target="_blank" rel="noopener">${esc(vi.web.replace(/^https?:\/\//, '').replace(/\/$/, ''))}</a>`
-    : k === 'address' ? `${esc(vi.address)} <a class="vinfo-map" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(vi.address)}" target="_blank" rel="noopener">地図</a>`
-    : esc(vi[k])}</dd>`).join('')}</dl></div>`;
+// 部署・担当者などに「なし」「不明」「—」と入っているときは空欄として扱う
+const VBLANK = new Set(['なし', '無し', 'ナシ', '特になし', 'とくになし', '不明', 'わからない', '分からない', '未確認', '未定', '空欄',
+  '-', '--', '—', '――', '―', 'ー', '‐', '－', '–', 'n/a', 'na', 'none', 'null', '×', 'x', '・', '?', '？']);
+function vblank(v) {
+  const t = String(v ?? '').trim();
+  if (!t) return '';
+  return VBLANK.has(t.toLowerCase().replace(/[\s。．.、,]+$/, '')) ? '' : t;
+}
+
+// テレアポ業者の入力（業者の画面と同じデータ。業者が直すとすぐこちらにも出る）
+const VEN_NEW = {};   // 開いたときに「更新あり」だった案件（この画面を開いているあいだは印を残す）
+function vendorEntryHtml(d) {
+  const e = d.vendor_entry;
+  if (!e) return '';
+  if (e.new) {
+    VEN_NEW[d.id] = e.changed || [];
+    const li = (S.allDeals || []).find(x => x.id === d.id);
+    if (li) li.vendor_staff_seen_at = li.vendor_touched_at;   // 一覧の札も消す
+  }
+  const changed = VEN_NEW[d.id];
+  const isNew = !!changed;
+  const val = f => f.key === 'web'
+    ? `<a href="${esc(/^https?:\/\//i.test(f.value) ? f.value : 'https://' + f.value)}" target="_blank" rel="noopener">${esc(f.value.replace(/^https?:\/\//i, '').replace(/\/$/, ''))}</a>`
+    : f.key === 'address' ? `${esc(f.value)} <a class="vinfo-map" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(f.value)}" target="_blank" rel="noopener">地図</a>`
+    : ['phone', 'mobile'].includes(f.key) ? `<a href="tel:${esc(f.value.replace(/[^\d+]/g, ''))}">${esc(f.value)}</a>`
+    : f.key === 'email' ? `<a href="mailto:${esc(f.value)}">${esc(f.value)}</a>`
+    : f.key === 'zip' ? `〒${esc(f.value.replace(/^〒/, ''))}` : esc(f.value);
+  const rows = e.fields.map(f => `<dt>${esc(f.label)}</dt><dd class="${isNew && changed.includes(f.key) ? 'is-changed' : ''}">${val(f)}
+      ${isNew && changed.includes(f.key) ? '<span class="ve-chg">直しました</span>' : ''}
+      ${f.ours ? `<div class="ve-diff" title="どちらも上書きしていません">${esc(f.ours_label)}では「${esc(f.ours)}」</div>` : ''}</dd>`).join('');
+  const when = [
+    e.telapo_at ? `<dt>架電日時</dt><dd>${esc(fmtDateTime(e.telapo_at))}</dd>` : '',
+    e.appo_at ? `<dt>アポ日時</dt><dd><b>${esc(fmtDateTime(e.appo_at))}</b></dd>` : '',
+  ].join('');
+  const calls = e.calls.map((a, i) => `<div class="ve-call ${i >= 3 ? 'is-more' : ''}">
+      <div class="ve-call-h"><span>${esc(fmtDateTime(a.occurred_at))}</span>${a.result ? `<span class="ve-res">${esc(a.result)}</span>` : `<span class="ve-kind">${esc(a.kind === 'memo' ? '情報の修正' : '電話')}</span>`}</div>
+      ${a.body ? `<div class="ve-call-b">${esc(a.body)}</div>` : ''}</div>`).join('');
+  return `<div class="detail-section ve-sec ${isNew ? 'is-new' : ''}" id="veSec">
+    <div class="section-label"><span>テレアポ業者の入力${e.vendor_name ? `（${esc(e.vendor_name)}）` : ''}${isNew ? ' <span class="vq-new">更新あり</span>' : ''}</span>
+      ${e.conflicts ? `<span class="ve-note">名刺・控えと違う項目 ${e.conflicts}件（両方を表示）</span>` : ''}</div>
+    ${rows || when ? `<dl class="vinfo ve-grid">${rows}${when}</dl>` : '<div class="kv-note">業者が入れた連絡先はありません（電話の記録だけ）</div>'}
+    ${calls ? `<div class="ve-calls-h">電話の記録とメモ（業者の入力・新しい順）</div><div class="ve-calls ${e.calls.length > 3 ? 'is-folded' : ''}">${calls}</div>
+      ${e.calls.length > 3 ? `<button class="btn-link" data-ve-more="1">すべて表示（${e.calls.length}件）</button>` : ''}` : ''}
+    <div class="kv-note">業者が画面で直すと、ここにもすぐ反映されます。名刺や案件の会社名・担当者は自動では書き換えません。</div>
+  </div>`;
 }
 
 function bindVendorFields(root, d) {
   const q = sel => root.querySelector(sel);
+  root.querySelectorAll('[data-ve-more]').forEach(b => b.onclick = () => { root.querySelector('.ve-calls').classList.remove('is-folded'); b.remove(); });
   if (q('#fTelapo')) q('#fTelapo').onchange = e => patchDeal({ telapo_at: e.target.value || null }, true);
   if (q('#fAppo')) q('#fAppo').onchange = e => patchDeal({ appo_at: e.target.value || null }, true);
   root.querySelectorAll('[data-vis]').forEach(b => b.onclick = async () => {
