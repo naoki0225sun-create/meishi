@@ -80,7 +80,7 @@ def init_db():
             tenant_id TEXT NOT NULL,
             channel TEXT NOT NULL,
             thread_ts TEXT NOT NULL,
-            kind TEXT NOT NULL,            -- card | report | intake
+            kind TEXT NOT NULL,            -- card | report | intake | cardlink
             status TEXT NOT NULL,          -- applied | pending | undone | failed
             deal_id INTEGER,
             card_id TEXT,
@@ -495,8 +495,15 @@ class SlackHandler:
         company = data["company"] or "不明"
         card_id = self.make_card_id(tenant, company, data["name"])
         label = f"{data['company'] or '(会社名不明)'} {data['name'] or '(氏名不明)'}"
+        card = {"id": card_id, "company": data["company"], "name": data["name"], "email": data["email"],
+                "phone": data["phone"], "mobile": data["mobile"], "website": data["website"],
+                "department_position": data["department_position"], "address": data["address"]}
         if card_id in known:
-            return f":information_source: {label} は登録済みです → <{app_url()}/sales.html?new={card_id}|案件を作成>"
+            link_lines = self.link_to_deal(tenant, channel, ts, card)
+            if link_lines.get("linked"):
+                return f":information_source: {label} は登録済みです\n" + link_lines["text"]
+            return (f":information_source: {label} は登録済みです → <{app_url()}/sales.html?new={card_id}|案件を作成>"
+                    + (("\n" + link_lines["text"]) if link_lines.get("text") else ""))
 
         t = self.get_tenant(tenant) or {}
         sheet = t.get("sheet_name", "名刺")
@@ -533,8 +540,51 @@ class SlackHandler:
             lines.append(f"　:grey_question: 読み取れなかった項目: {'・'.join(missing)}")
         if data["uncertain"]:
             lines.append(f"　:eyes: 自信がない項目: {'・'.join(FIELD_LABELS[k] for k in data['uncertain'])}（名刺管理で確認してください）")
-        lines.append(f"　→ <{app_url()}/sales.html?new={card_id}|この名刺で案件を作成>")
+        link = self.link_to_deal(tenant, channel, ts, card)
+        if link.get("linked"):
+            lines.append(link["text"])
+        else:
+            if link.get("text"):
+                lines.append(link["text"])
+            lines.append(f"　→ <{app_url()}/sales.html?new={card_id}|{'新しい案件として作成' if link.get('text') else 'この名刺で案件を作成'}>")
         return "\n".join(lines)
+
+    def link_to_deal(self, tenant, channel, ts, card) -> dict:
+        """名刺を、名刺のない進行中の案件（テレアポ業者が登録したものなど）につなぐ。
+        確実な案件が1件だけなら自動でつなぎ、候補が複数なら返信で選んでもらう"""
+        import cardmatch
+        try:
+            with sales._conn() as c:
+                cands = cardmatch.candidates(c, tenant, card)
+                target = cardmatch.auto_target(cands)
+                if target:
+                    before = c.execute("SELECT COALESCE(MAX(id),0) FROM activities").fetchone()[0]
+                    prev = cardmatch.link(c, tenant, target["id"], card, how=f"Slackの名刺・{target['reason_text']}が一致")
+                    new_ids = [r[0] for r in c.execute("SELECT id FROM activities WHERE id>? AND deal_id=?",
+                                                       (before, target["id"])).fetchall()]
+                    c.execute("""INSERT INTO slack_actions (tenant_id, channel, thread_ts, kind, status, deal_id, card_id,
+                        prev, activity_ids, parse, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                              (tenant, channel, ts, "cardlink", "applied", target["id"], card["id"],
+                               json.dumps(prev, ensure_ascii=False), json.dumps(new_ids),
+                               json.dumps(card, ensure_ascii=False), sales._now()))
+                    c.commit()
+                    who = "テレアポ業者が登録した" if target["vendor"] else "名刺なしで登録してあった"
+                    return {"linked": True, "text":
+                            f"　:link: {who}案件 <{app_url()}/sales.html?deal={target['id']}|#{target['id']} "
+                            f"{slack_esc(target['company'] or target['title'] or '')}> につなぎました（{target['reason_text']}が一致）\n"
+                            "　_違っていたら、このスレッドに「取消」と返信してください_"}
+                if not cands:
+                    return {}
+                c.execute("""INSERT INTO slack_actions (tenant_id, channel, thread_ts, kind, status, card_id, parse, created_at)
+                    VALUES (?,?,?,?,?,?,?,?)""", (tenant, channel, ts, "cardlink", "pending", card["id"],
+                                                   json.dumps(card, ensure_ascii=False), sales._now()))
+                c.commit()
+        except Exception:
+            log.exception("名刺と案件の照合に失敗")
+            return {}
+        rows = [f"　　• <{app_url()}/sales.html?deal={x['id']}|#{x['id']} {slack_esc(x['company'] or x['title'] or '')}>"
+                f"（{x['stage']}・{x['reason_text']}）" for x in cands[:5]]
+        return {"text": "　:grey_question: 同じ会社の案件があります。つなぐ案件の番号を「#62」のように返信してください\n" + "\n".join(rows)}
 
     # 文章の報告
     def open_deals(self, tenant) -> list:
@@ -653,6 +703,17 @@ class SlackHandler:
                 self.apply_intake(tenant, channel, thread_ts, target, owner)
             return
         if t in UNDO_WORDS:
+            link = next((a for a in acts if a["kind"] == "cardlink" and a["status"] == "applied"), None)
+            if link and not any(a["kind"] == "report" and a["status"] == "applied" and a["id"] > link["id"] for a in acts):
+                self.undo(link)
+                with sales._conn() as c:
+                    import cardmatch
+                    cardmatch.remember_skip(c, tenant, link["deal_id"], link["card_id"])
+                    sales.log_activity(c, tenant, link["deal_id"], "stage", "名刺のつながりを外しました（Slackで取消）")
+                    c.commit()
+                post(channel, thread_ts, f":leftwards_arrow_with_hook: #{link['deal_id']} から名刺を外しました。"
+                     f"新しい案件にするなら → <{app_url()}/sales.html?new={link['card_id']}|この名刺で案件を作成>")
+                return
             if any(a["kind"] == "intake" and a["status"] == "resolved" for a in acts) and \
                     not any(a["kind"] == "report" and a["status"] == "applied" for a in acts):
                 post(channel, thread_ts, "資料からの追加はここからは取り消せません。営業画面で案件を開いて削除してください")
@@ -665,9 +726,13 @@ class SlackHandler:
             self.undo(target)
             post(channel, thread_ts, ":leftwards_arrow_with_hook: 取り消しました（記録を削除し、案件を元の状態に戻しました）")
             return
-        m = re.fullmatch(r"#\s*(\d+)", t)
+        m = re.fullmatch(r"[#＃]\s*(\d+)", t)
         if m:
             target = next((a for a in acts if a["kind"] == "report" and a["status"] in ("pending", "undone")), None)
+            pend = next((a for a in acts if a["kind"] == "cardlink" and a["status"] in ("pending", "undone")), None)
+            if not target and pend:
+                self.link_by_reply(tenant, channel, thread_ts, pend, int(m.group(1)))
+                return
             if not target:
                 return
             deal_id = int(m.group(1))
@@ -682,6 +747,27 @@ class SlackHandler:
                 c.execute("UPDATE slack_actions SET status='resolved' WHERE id=?", (target["id"],))
                 c.commit()
             post(channel, thread_ts, msg + "\n_違っていたら「取消」と返信してください_")
+
+    def link_by_reply(self, tenant, channel, thread_ts, action: dict, deal_id: int):
+        import cardmatch
+        card = json.loads(action["parse"] or "{}") or {"id": action["card_id"]}
+        with sales._conn() as c:
+            row = c.execute("SELECT * FROM deals WHERE id=? AND tenant_id=?", (deal_id, tenant)).fetchone()
+            if not row or row["stage"] in sales.CLOSED_STAGES:
+                post(channel, thread_ts, f"#{deal_id} は進行中の案件に見つかりません")
+                return
+            if row["card_id"]:
+                post(channel, thread_ts, f"#{deal_id} にはすでに名刺がつながっています。案件の画面で付け替えてください")
+                return
+            before = c.execute("SELECT COALESCE(MAX(id),0) FROM activities").fetchone()[0]
+            prev = cardmatch.link(c, tenant, deal_id, card, how="Slackで選択")
+            new_ids = [r[0] for r in c.execute("SELECT id FROM activities WHERE id>? AND deal_id=?",
+                                               (before, deal_id)).fetchall()]
+            c.execute("""UPDATE slack_actions SET status='applied', deal_id=?, prev=?, activity_ids=? WHERE id=?""",
+                      (deal_id, json.dumps(prev, ensure_ascii=False), json.dumps(new_ids), action["id"]))
+            c.commit()
+        post(channel, thread_ts, f":link: <{app_url()}/sales.html?deal={deal_id}|#{deal_id} "
+             f"{slack_esc(row['company_snapshot'] or row['title'] or '')}> に名刺をつなぎました\n_違っていたら「取消」と返信してください_")
 
     def undo(self, a: dict):
         prev = json.loads(a["prev"] or "{}")

@@ -417,6 +417,14 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_deals_card ON deals(tenant_id, card_id);
         CREATE INDEX IF NOT EXISTS idx_activities_deal ON activities(deal_id, occurred_at);
         CREATE INDEX IF NOT EXISTS idx_signatures_tenant ON signatures(tenant_id, sort_order);
+        -- 外した名刺のつながり（自動でつなぎ直さない）
+        CREATE TABLE IF NOT EXISTS card_link_skip (
+            tenant_id TEXT NOT NULL,
+            deal_id INTEGER NOT NULL,
+            card_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (tenant_id, deal_id, card_id)
+        );
         """)
         # Phase 2a マイグレーション
         _add_column(c, "activities", "awaiting_reply", "awaiting_reply INTEGER NOT NULL DEFAULT 0")
@@ -1168,10 +1176,13 @@ def clean_checks(cur: dict, incoming: dict) -> dict:
     return out
 
 
-def link_card(c, tenant_id, cur: dict, card_id: str, by_id: dict, sets: dict):
+def link_card(c, tenant_id, cur: dict, card_id: str, by_id: dict, sets: dict, how: str = ""):
     """案件に名刺をつなぐ（または外す）。控えも名刺の内容に合わせる"""
     if card_id == (cur.get("card_id") or ""):
         return
+    if cur.get("card_id"):
+        import cardmatch   # 外した（付け替えた）名刺は、自動でつなぎ直さない
+        cardmatch.remember_skip(c, tenant_id, cur["id"], cur["card_id"])
     if not card_id:
         sets["card_id"] = ""
         log_activity(c, tenant_id, cur["id"], "stage", "名刺のつながりを外しました")
@@ -1182,7 +1193,8 @@ def link_card(c, tenant_id, cur: dict, card_id: str, by_id: dict, sets: dict):
     sets.update({"card_id": card["id"], "company_snapshot": card.get("company"),
                  "contact_snapshot": card.get("name"), "email_snapshot": card.get("email"),
                  "phone_snapshot": card.get("mobile") or card.get("phone")})
-    log_activity(c, tenant_id, cur["id"], "stage", f"名刺をつなぎました: {card.get('company') or ''} {card.get('name') or ''}")
+    log_activity(c, tenant_id, cur["id"], "stage",
+                 f"名刺をつなぎました{f'（{how}）' if how else ''}: {card.get('company') or ''} {card.get('name') or ''}")
 
 
 def move_pipeline(c, tenant_id, cur: dict, new_pipeline: str, sets: dict, tenant_display: str = ""):
@@ -1252,6 +1264,8 @@ def build_router(check_session: Callable, fetch_cards: Callable,
                 by_email.setdefault(e, c)
             if c.get("name"):
                 by_cn.setdefault((_norm_company(c.get("company")), _norm_name(c.get("name"))), c)
+        import cardmatch   # 電話・ドメイン・会社名の索引（名刺のない案件をあとから自動でつなぐ）
+        by_email["\0ix"] = cardmatch.CardIndex(cards)
         return by_id, by_email
 
     def resolve(c, row, by_id, by_email):
@@ -1269,10 +1283,24 @@ def build_router(check_session: Callable, fetch_cards: Callable,
             # 名刺なしで作った案件：あとから同じ会社・氏名の名刺が登録されたらつなぐ
             key = (_norm_company(row["company_snapshot"]), _norm_name(row["contact_snapshot"]))
             card = by_cn.get(key)
-            if card:
+            if card and not cardmatch_skipped(c, row, card):
                 c.execute("UPDATE deals SET card_id=? WHERE id=? AND tenant_id=?", (card["id"], row["id"], row["tenant_id"]))
                 return card
+        if not row["card_id"] and by_email.get("\0ix"):
+            # 業者が登録した案件など：電話・ドメイン・会社名が確実に一致する名刺が1枚だけならつなぐ
+            import cardmatch
+            try:
+                card = cardmatch.auto_link_deal(c, row["tenant_id"], row, by_email["\0ix"])
+            except Exception:
+                __import__("logging").getLogger("sales").exception("名刺の自動つなぎに失敗")
+                card = None
+            if card:
+                return card
         return None
+
+    def cardmatch_skipped(c, row, card) -> bool:
+        import cardmatch
+        return cardmatch._skipped(c, row["tenant_id"], row["id"], card["id"])
 
     # ── マスタ ──
     @r.get("/meta")
@@ -1704,6 +1732,18 @@ def build_router(check_session: Callable, fetch_cards: Callable,
                 return any(ql in (h or "").lower() for h in hay)
             deals = [d for d in deals if hit(d)]
         return {"deals": deals, "total": len(deals), "settings": settings}
+
+    @r.get("/cards/{card_id}/deal-candidates")
+    def card_deal_candidates(card_id: str, session: dict = Depends(check_session)):
+        """この名刺をつなげそうな、名刺のない進行中の案件（新規案件の画面で先に出す）"""
+        import cardmatch
+        t = session["tenant_id"]
+        card = by_id_for(t).get(card_id)
+        if not card:
+            raise HTTPException(404, "名刺が見つかりません")
+        with _conn() as c:
+            cands = cardmatch.candidates(c, t, card)
+        return {"candidates": cands[:5], "auto": (cardmatch.auto_target(cands) or {}).get("id")}
 
     @r.post("/deals")
     def create_deal(body: DealCreate, session: dict = Depends(check_session)):

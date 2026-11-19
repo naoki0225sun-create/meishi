@@ -1412,6 +1412,43 @@ function renderPicked() {
       <button class="btn-sm" id="unpick">変更</button>`;
     $('unpick').onclick = () => { S.picked = null; renderPicked(); $('cardSearch').focus(); };
   }
+  showLinkCands(p);
+}
+
+// 選んだ名刺の会社に、名刺のない案件（テレアポ業者が登録したものなど）があれば、新しく作る前につなぎ先として出す
+async function showLinkCands(card) {
+  const box = $('linkCands');
+  box.style.display = 'none';
+  box.innerHTML = '';
+  if (!card) return;
+  let res;
+  try {
+    res = await api(`/api/sales/cards/${encodeURIComponent(card.id)}/deal-candidates`);
+  } catch { return; }
+  if (!S.picked || S.picked.id !== card.id || !res.candidates.length) return;
+  box.innerHTML = `<div class="link-cands-head">この会社の案件がすでにあります。新しく作らずに、名刺をつなげます</div>
+    ${res.candidates.map(x => `<div class="link-cand${x.id === res.auto ? ' is-best' : ''}">
+      <div><div class="card-result-name">#${x.id} ${esc(x.company || x.title || '')}${x.contact ? ` <span class="card-result-sub">${esc(x.contact)}</span>` : ''}</div>
+        <div class="card-result-sub">${esc(x.stage)}${x.vendor ? '・テレアポ業者が登録' : ''}・${esc(x.reason_text)}${x.strong ? 'が一致' : ''}</div></div>
+      <button type="button" class="btn-sm${x.id === res.auto ? ' btn-sm-primary' : ''}" data-link-deal="${x.id}">この案件につなぐ</button>
+    </div>`).join('')}
+    <div class="card-result-sub">どれにも当てはまらなければ、下の「作成」で新しい案件になります</div>`;
+  box.style.display = '';
+  box.querySelectorAll('[data-link-deal]').forEach(b => b.onclick = async () => {
+    const id = Number(b.dataset.linkDeal);
+    b.disabled = true;
+    try {
+      await api(`/api/sales/deals/${id}`, { method: 'PATCH', body: JSON.stringify({ card_id: card.id }) });
+      $('newDealOverlay').style.display = 'none';
+      S.filter = 'open';
+      await loadDeals();
+      selectDeal(id);
+      showToast(`#${id} に名刺をつなぎました`, { type: 'success', duration: 1800 });
+    } catch (e) {
+      b.disabled = false;
+      showToast(e.message, { type: 'error', title: 'つなげませんでした' });
+    }
+  });
 }
 
 const searchCards = debounce(async () => {

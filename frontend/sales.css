@@ -867,3 +867,9 @@ body.board-mode .split-handle { display: none; }
 .bc-thumb img { width: 56px; height: 40px; object-fit: contain; background: #fff; border-radius: 4px; flex: none; }
 .bc-thumb span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .bc-thumb:hover { border-color: var(--blue-300, #A4BCFD); }
+
+/* 新規案件：名刺をつなげる既存の案件 */
+.link-cands { margin-top: 8px; padding: 10px 12px; border: 1px solid #f3d9a6; background: #fffaf0; border-radius: 10px; display: grid; gap: 8px; }
+.link-cands-head { font-size: 13px; font-weight: 600; color: #8a5a00; }
+.link-cand { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; background: #fff; border: 1px solid #eee; border-radius: 8px; }
+.link-cand.is-best { border-color: #4a63d9; }
