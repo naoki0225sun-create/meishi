@@ -50,6 +50,7 @@ FIELD_LABELS = {"company": "会社名", "name": "氏名", "department_position":
                 "address": "住所", "mobile": "携帯", "phone": "電話", "website": "サイト", "name_kana": "ふりがな"}
 IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 UNDO_WORDS = {"取消", "取り消し", "取消し", "とりけし", "undo"}
+NEW_DEAL_RE = re.compile(r"新規|新しい案件|新しく(案件|作|登録)|案件(を)?(作|登録)|登録して|登録お願い|作って")
 ADD_WORDS = {"追加", "ついか", "OK", "ok", "Ok", "おけ", "お願いします"}
 
 
@@ -280,6 +281,8 @@ def parse_report(text: str, deals: list, today: date) -> dict:
         ' "candidates": [候補の案件ID], "kind": "meeting|call|email|memo", "title": "記録の件名（20字程度）",'
         ' "summary": "要点", "stage": "ステージ名またはnull", "lost_reason": "失注理由またはnull",'
         ' "next_action": "次のアクションまたはnull", "next_action_due": "YYYY-MM-DDまたはnull",'
+        ' "contact": {"company": "会社名", "person": "担当者名（様・さんは付けない）", "department": "部署・役職",'
+        ' "phone": "電話", "email": "メール", "address": "住所（郵便番号も）"},'
         ' "unclear": ["判断できなかった点"]}\n\n'
         "# ルール\n"
         "- 雑談・連絡・質問など営業の報告でなければ is_report を false\n"
@@ -288,6 +291,7 @@ def parse_report(text: str, deals: list, today: date) -> dict:
         f"- stage は投稿で明確に進んだときだけ。案件の種類ごとに使える値が違う: {stage_words(deals)}\n"
         f"- 失注のときは lost_reason を {', '.join(sales.LOST_REASONS)} から選ぶ。分からなければ その他\n"
         "- 「来週火曜」などの日付は今日を基準に YYYY-MM-DD に直す。曖昧なら null にして unclear に書く\n"
+        "- contact は投稿に書かれている相手の会社・連絡先だけを入れる（なければ null。自社の情報は入れない）\n"
         "- 投稿にない事実を作らない"
     )
     data = parse_json(claude(prompt, 1000))
@@ -619,8 +623,10 @@ class SlackHandler:
             lines.append("候補:")
             lines += [f"　`#{d['id']}` {d['company'] or ''} {d['contact'] or ''}｜{d['title']}（{d['stage']}）" for d in cands]
         else:
-            lines.append("該当しそうな進行中の案件が見つかりません。新しい相手なら先に名刺から案件を作成してください。")
-        lines.append("このスレッドに `#案件番号` を返信すると その案件に記録します（案件番号は営業画面の案件名の左に #12 のように表示されています）")
+            lines.append("該当しそうな進行中の案件が見つかりません。")
+        co = (p.get("contact") or {}).get("company") if isinstance(p.get("contact"), dict) else None
+        lines.append(f"・新しい相手なら、このスレッドに「新規」と返信してください。{f'「{co}」で' if co else 'この内容で'}案件を作って記録します（名刺はあとからでもつながります）")
+        lines.append("・すでにある案件なら `#案件番号` を返信すると、その案件に記録します（案件番号は営業画面の案件名の左に #12 のように表示されています）")
         if p.get("unclear"):
             lines.append(f"判断できなかった点: {'／'.join(p['unclear'])}")
         post(channel, ts, "\n".join(lines))
@@ -719,14 +725,34 @@ class SlackHandler:
                 post(channel, thread_ts, "資料からの追加はここからは取り消せません。営業画面で案件を開いて削除してください")
                 return
             target = next((a for a in acts if a["kind"] == "report" and a["status"] == "applied"), None)
+            if target and json.loads(target["parse"] or "{}").get("_created"):
+                with sales._conn() as c:
+                    c.execute("DELETE FROM activities WHERE tenant_id=? AND deal_id=?", (tenant, target["deal_id"]))
+                    c.execute("DELETE FROM deals WHERE tenant_id=? AND id=?", (tenant, target["deal_id"]))
+                    c.execute("UPDATE slack_actions SET status='undone' WHERE id=?", (target["id"],))
+                    c.execute("""UPDATE slack_actions SET status='pending' WHERE tenant_id=? AND channel=? AND thread_ts=?
+                        AND kind='report' AND status='resolved'""", (tenant, channel, thread_ts))
+                    c.commit()
+                post(channel, thread_ts, f":leftwards_arrow_with_hook: 作った案件 #{target['deal_id']} を取り消しました（案件ごと削除しました）")
+                return
             if not target:
-                if any(a["kind"] == "card" for a in acts):
+                waiting = next((a for a in acts if a["kind"] == "report" and a["status"] == "pending"), None)
+                if waiting:
+                    with sales._conn() as c:
+                        c.execute("UPDATE slack_actions SET status='resolved' WHERE id=?", (waiting["id"],))
+                        c.commit()
+                    post(channel, thread_ts, "わかりました。この報告は記録しないでおきます")
+                elif any(a["kind"] == "card" for a in acts):
                     post(channel, thread_ts, "名刺の登録はここからは取り消せません。名刺管理の画面で削除してください")
                 return
             self.undo(target)
             post(channel, thread_ts, ":leftwards_arrow_with_hook: 取り消しました（記録を削除し、案件を元の状態に戻しました）")
             return
-        m = re.fullmatch(r"[#＃]\s*(\d+)", t)
+        pending_report = next((a for a in acts if a["kind"] == "report" and a["status"] in ("pending", "undone")), None)
+        if pending_report and NEW_DEAL_RE.search(t) and not re.search(r"[#＃]\s*\d+", t):
+            self.create_from_report(tenant, channel, thread_ts, pending_report, owner)
+            return
+        m = re.search(r"[#＃]\s*(\d+)", t) if len(t) <= 40 else None
         if m:
             target = next((a for a in acts if a["kind"] == "report" and a["status"] in ("pending", "undone")), None)
             pend = next((a for a in acts if a["kind"] == "cardlink" and a["status"] in ("pending", "undone")), None)
@@ -747,6 +773,50 @@ class SlackHandler:
                 c.execute("UPDATE slack_actions SET status='resolved' WHERE id=?", (target["id"],))
                 c.commit()
             post(channel, thread_ts, msg + "\n_違っていたら「取消」と返信してください_")
+            return
+        if pending_report and t:
+            # 返事の意味が分からないときは黙らずに、できることを伝える
+            post(channel, thread_ts, "この返信ではどうすればよいか分かりませんでした。次のどれかで返信してください\n"
+                 "・「新規」… この内容で新しい案件を作って記録します\n"
+                 "・`#12` のような案件番号 … その案件に記録します\n"
+                 "・「取消」… 何もしません（このままにします）")
+
+    def create_from_report(self, tenant, channel, thread_ts, action: dict, owner=None):
+        """「新規」と返信されたら、報告の内容で名刺なしの案件を作り、その案件に記録する"""
+        parsed = json.loads(action["parse"] or "{}")
+        owner = parsed.pop("_owner", None) or owner
+        ct = parsed.get("contact") if isinstance(parsed.get("contact"), dict) else {}
+        if not (ct.get("company") or "").strip():
+            # 以前の形で保留していた報告は、相手の情報をあらためて読み取る
+            try:
+                again = parse_report(action["message"] or "", [], date.today())
+                ct = again.get("contact") if isinstance(again.get("contact"), dict) else {}
+                for k in ("kind", "title", "summary", "stage", "next_action", "next_action_due"):
+                    if not parsed.get(k) and again.get(k):
+                        parsed[k] = again[k]
+            except Exception:
+                log.exception("報告の読み直しに失敗")
+        company = (ct.get("company") or "").strip()
+        if not company:
+            post(channel, thread_ts, "投稿から会社名を読み取れませんでした。営業画面の「＋ 新規案件」から作ってください: "
+                 f"{app_url()}/sales.html")
+            return
+        card = {"company": company[:120], "name": (ct.get("person") or "").strip()[:60] or None,
+                "email": (ct.get("email") or "").strip()[:200] or None, "phone": (ct.get("phone") or "").strip()[:40] or None}
+        with sales._conn() as c:
+            members = sales.member_names(c, tenant)
+            deal_id = sales.insert_deal(c, tenant, card, title=None, pipeline="sales",
+                                        owner=owner if owner in members else None,
+                                        created_note="案件作成（Slackの報告から・名刺なし）")
+            if ct.get("address") or ct.get("department"):
+                info = " / ".join(x for x in (ct.get("department"), ct.get("address")) if x)
+                sales.log_activity(c, tenant, deal_id, "memo", "相手の情報（Slackの報告から）", info[:1000])
+            c.execute("UPDATE slack_actions SET status='resolved' WHERE id=?", (action["id"],))
+            c.commit()
+        parsed["_created"] = True
+        msg = self.apply_report(tenant, channel, thread_ts, deal_id, parsed, action["message"], owner)
+        post(channel, thread_ts, f":new: 新しい案件 #{deal_id} を作りました\n" + msg
+             + "\n_名刺をもらったら Slack に上げれば、この案件に自動でつながります。違っていたら「取消」と返信してください_")
 
     def link_by_reply(self, tenant, channel, thread_ts, action: dict, deal_id: int):
         import cardmatch

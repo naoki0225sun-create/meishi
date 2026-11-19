@@ -208,3 +208,69 @@ def test_slack_choose_by_number(app, posts):
 def test_slack_no_candidates(app, posts):
     vendor_deal(app, "company_a", "株式会社 特殊電装", "池田")
     assert FakeHandler().link_to_deal("company_a", "C1", "300.1", card("c1", "全然違う工業", "山田")) == {}
+
+
+# ── Slack：どの案件か分からない報告に「新規」と返信して案件を作る ──
+ONISHI = ("大西機械設計\n会社案内と名刺送付をしました。\nそれに対して一度見積もり依頼させていただきますとのことです。\n"
+          "担当：大西様（代表）\n〒544-0015\n大阪府大阪市生野区巽南 5-7-37\n06-4303-1138\n"
+          "その後、11/30に見積もりのためも含めて盤を見に行きます")
+PARSED = {"is_report": True, "deal_id": None, "confidence": "low", "candidates": [], "kind": "call",
+          "title": "会社案内送付・見積依頼の予定", "summary": "会社案内と名刺を送付。見積依頼をいただける見込み",
+          "stage": None, "next_action": "見積のため盤を見に行く", "next_action_due": "2026-11-30",
+          "contact": {"company": "大西機械設計", "person": "大西", "department": "代表",
+                      "phone": "06-4303-1138", "address": "〒544-0015 大阪府大阪市生野区巽南5-7-37"},
+          "unclear": ["11/30の訪問時刻"]}
+
+
+def test_slack_new_deal_from_report(app, posts, monkeypatch):
+    monkeypatch.setattr(slack_bot, "parse_report", lambda text, deals, today: dict(PARSED))
+    h = FakeHandler()
+    h.handle_report("company_a", "C1", "400.1", ONISHI, owner=None)
+    assert "「新規」と返信" in posts[-1] and "大西機械設計" in posts[-1]
+    h.handle_thread_reply("company_a", "C1", "400.1", "まだ訪問前なので名刺がありません、新規で案件登録お願いします")
+    assert ":new:" in posts[-1]
+    with sales._conn() as c:
+        d = c.execute("SELECT * FROM deals WHERE company_snapshot='大西機械設計'").fetchone()
+        assert d and d["contact_snapshot"] == "大西" and d["phone_snapshot"] == "06-4303-1138"
+        assert d["next_action_due"] == "2026-11-30" and not d["card_id"]
+        acts = [a["title"] for a in c.execute("SELECT title FROM activities WHERE deal_id=?", (d["id"],))]
+    assert "相手の情報（Slackの報告から）" in acts and "会社案内送付・見積依頼の予定" in acts
+    # 名刺が来たら電話番号でこの案件につながる
+    CARDS["company_a"].append(card("c1", "大西機械設計", "大西 太郎", phone="06-4303-1138"))
+    assert card_of(app, "company_a", d["id"]) == "c1"
+
+
+def test_slack_new_deal_undo(app, posts, monkeypatch):
+    monkeypatch.setattr(slack_bot, "parse_report", lambda text, deals, today: dict(PARSED))
+    h = FakeHandler()
+    h.handle_report("company_a", "C1", "500.1", ONISHI)
+    h.handle_thread_reply("company_a", "C1", "500.1", "新規")
+    h.handle_thread_reply("company_a", "C1", "500.1", "取消")
+    assert "取り消しました" in posts[-1]
+    with sales._conn() as c:
+        assert not c.execute("SELECT 1 FROM deals WHERE company_snapshot='大西機械設計'").fetchone()
+
+
+def test_slack_unknown_reply_gets_help(app, posts, monkeypatch):
+    monkeypatch.setattr(slack_bot, "parse_report", lambda text, deals, today: dict(PARSED))
+    h = FakeHandler()
+    h.handle_report("company_a", "C1", "600.1", ONISHI)
+    h.handle_thread_reply("company_a", "C1", "600.1", "よろしく")
+    assert "分かりませんでした" in posts[-1]
+    h.handle_thread_reply("company_a", "C1", "600.1", "取消")
+    assert "記録しないでおきます" in posts[-1]
+    n = len(posts)
+    h.handle_thread_reply("company_a", "C1", "600.1", "よろしく")   # 片づいたあとは黙る
+    assert len(posts) == n
+
+
+def test_slack_old_pending_report_is_read_again(app, posts, monkeypatch):
+    old = {k: v for k, v in PARSED.items() if k != "contact"}
+    with sales._conn() as c:
+        c.execute("""INSERT INTO slack_actions (tenant_id, channel, thread_ts, kind, status, parse, message, created_at)
+            VALUES (?,?,?,?,?,?,?,?)""", ("company_a", "C1", "700.1", "report", "pending",
+                                         json.dumps(old, ensure_ascii=False), ONISHI, sales._now()))
+        c.commit()
+    monkeypatch.setattr(slack_bot, "parse_report", lambda text, deals, today: dict(PARSED))
+    FakeHandler().handle_thread_reply("company_a", "C1", "700.1", "新規で案件登録お願いします")
+    assert ":new:" in posts[-1]
