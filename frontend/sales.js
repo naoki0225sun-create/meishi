@@ -42,6 +42,7 @@ const linearCount = p => p.stages.indexOf(p.lost) - (p.key === 'sales' ? 1 : 0);
 
 // ── 共通 ──
 async function api(path, options = {}) {
+  const t0 = Date.now();
   const res = await fetch(path, {
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
@@ -52,6 +53,8 @@ async function api(path, options = {}) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || `HTTP ${res.status}`);
   }
+  // この画面で書いた記録は「新着」にしない（sales-today.js）
+  if (options.method && options.method !== 'GET' && path.startsWith('/api/sales/') && typeof newsAfterWrite === 'function') newsAfterWrite(t0);
   return res.json();
 }
 

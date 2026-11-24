@@ -822,6 +822,31 @@ body.board-mode .split-handle { display: none; }
   background: #fffbf2; border: 1px solid #f2c76e; border-radius: 12px; padding: 10px 14px; margin-top: 6px; cursor: pointer; }
 .td-news-row span:not(.deal-no) { color: #8a5a00; font-size: 12px; }
 .td-go { margin-left: auto; color: var(--accent) !important; font-weight: 700; }
+/* 新着（営業メモ・名刺の登録・テレアポ業者から） */
+.nw-allread { margin-left: auto; font-size: 12px; font-weight: 600; }
+.nw-row { appearance: none; width: 100%; display: flex; align-items: center; gap: 12px; text-align: left; font: inherit; font-size: 13px; color: inherit;
+  background: #fff; border: 1px solid var(--border); border-left: 4px solid var(--teal, #0f8a83); border-radius: 12px; padding: 9px 14px; margin-top: 6px; cursor: pointer; min-width: 0; }
+.nw-row:hover { border-color: var(--teal, #0f8a83); }
+.nw-tag { flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 92px; font-size: 11px; font-weight: 700; color: var(--teal, #0f8a83);
+  background: #e9f6f5; border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+.td-news-row .nw-tag.nw-tag-v { color: #8a5a00; background: #fff1d6; }
+.nw-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.nw-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.nw-head b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nw-more { font-size: 11px; color: var(--gray-500); white-space: nowrap; }
+.nw-sub { font-size: 12.5px; color: var(--gray-600, #4b5563); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nw-snip { color: var(--gray-500); margin-left: 8px; }
+.nw-note { color: #8a5a00; margin-left: 8px; font-size: 11.5px; }
+.nw-meta { flex: none; display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--gray-500); white-space: nowrap; }
+.nw-src { font-size: 10.5px; font-weight: 700; color: #4b5870; background: #eef1f6; border-radius: 4px; padding: 1px 6px; }
+.nw-showall { display: block; margin: 8px auto 0; font-size: 12.5px; }
+@media (max-width: 860px) {
+  .nw-row { flex-wrap: wrap; gap: 4px 10px; }
+  .nw-body { flex-basis: 100%; order: 2; }
+  .nw-tag { min-width: 0; }
+  .nw-meta { margin-left: auto; }
+  .nw-sub { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+}
 @media (max-width: 860px) {
   .td-wrap { padding: 14px 12px 90px; }
   .td-row { flex-wrap: wrap; gap: 6px 10px; }

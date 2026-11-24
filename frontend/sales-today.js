@@ -26,6 +26,137 @@ function noNextBadge(d) {
   return d.is_open && !d.next_action ? '<span class="nonext-badge" title="次にやることが決まっていません">次の一手なし</span>' : '';
 }
 
+// ── 新着（営業メモ・名刺の登録・テレアポ業者から）──
+//   最近7日の記録と名刺を /api/sales/news から読む。既読はこの端末（ブラウザ）に保存
+//   自分がこの画面で書いた記録は、書いた直後に既読にする（自分の書いたものは新着にしない）
+const NEWS = { items: null, maxId: null, loadedAt: 0, loading: false, showAll: false };
+const NEWS_SEEN_KEY = 'news.seen';
+const NEWS_KIND = { memo: ['メモ', 'note'], call: ['電話', 'phone'], meeting: ['アポ・打合せ', 'meet'], email: ['メール', 'mail'] };
+function newsSeen() { try { return JSON.parse(storeGet(NEWS_SEEN_KEY) || '{}') || {}; } catch { return {}; } }
+function newsMarkSeen(keys) {
+  if (!keys.length) return;
+  const seen = newsSeen(), now = Date.now(), lim = now - 10 * 86400000;
+  keys.forEach(k => { seen[k] = now; });
+  for (const k of Object.keys(seen)) if (seen[k] < lim) delete seen[k];
+  storeSet(NEWS_SEEN_KEY, JSON.stringify(seen));
+}
+async function loadNews(force) {
+  if (NEWS.loading || (!force && NEWS.items && Date.now() - NEWS.loadedAt < 60000)) return false;
+  NEWS.loading = true;
+  try {
+    const data = await api('/api/sales/news');
+    NEWS.items = data.items || []; NEWS.maxId = data.max_activity_id; NEWS.loadedAt = Date.now();
+    return true;
+  } catch { NEWS.items = NEWS.items || []; return false; } finally { NEWS.loading = false; }
+}
+// この画面で記録を書いたあとに呼ぶ（sales.js の api から）
+let newsOwnT = null;
+function newsAfterWrite(t0) {
+  clearTimeout(newsOwnT);
+  newsOwnT = setTimeout(async () => {
+    try {
+      const data = await api(`/api/sales/news?after=${NEWS.maxId || 0}&days=1`);
+      const from = t0 - 15000;
+      newsMarkSeen((data.items || []).filter(i => i.type !== 'card' && Date.parse(i.at) >= from).map(i => i.key));
+      NEWS.loadedAt = 0;
+      if (S.view === 'today') { await loadNews(true); renderToday(); }
+    } catch { /* 新着の更新に失敗しても本来の操作には影響させない */ }
+  }, 700);
+}
+// 案件ごと・名刺ごとにまとめた、まだ見ていない新着
+function newsGroups() {
+  const seen = newsSeen(), deals = new Map((S.allDeals || []).map(d => [d.id, d]));
+  const out = [], byKey = new Map();
+  const fresh = (NEWS.items || []).filter(it => !seen[it.key]);
+  // 名刺の行を先に作り、同じ案件の記録はその行にまとめる
+  for (const it of fresh) {
+    if (it.type !== 'card') continue;
+    if (TD.owner && !(TD.owner === '-' ? !it.owners.length : it.owners.includes(TD.owner))) continue;
+    const g = { key: `c:${it.card_id}`, card: it, items: [it], at: it.at, deal: deals.get(it.deal_ids[0]) || null };
+    out.push(g); byKey.set(g.key, g);
+  }
+  for (const it of fresh) {
+    if (it.type === 'card') continue;
+    const d = deals.get(it.deal_id);
+    if (d && !tdOwnerOk(d)) continue;
+    if (!d && TD.owner) continue;
+    // 同じ案件の名刺の行があればそこへ、なければ案件ごとに1行
+    const cg = d && d.card_id ? byKey.get(`c:${d.card_id}`) : null;
+    const g = cg || byKey.get(`d:${it.deal_id}`);
+    if (g) { g.items.push(it); if ((it.at || '') > (g.at || '')) g.at = it.at; continue; }
+    const ng = { key: `d:${it.deal_id}`, deal: d || null, dealId: it.deal_id, items: [it], at: it.at };
+    out.push(ng); byKey.set(ng.key, ng);
+  }
+  return out.sort((a, b) => (b.at || '').localeCompare(a.at || ''));
+}
+function newsTime(at) {
+  if (!at) return '';
+  const t = new Date(at), n = new Date();
+  const hm = `${t.getHours()}:${pad(t.getMinutes())}`;
+  if (t.toDateString() === n.toDateString()) return hm;
+  const y = new Date(n); y.setDate(n.getDate() - 1);
+  if (t.toDateString() === y.toDateString()) return `昨日 ${hm}`;
+  return `${t.getMonth() + 1}/${t.getDate()} ${hm}`;
+}
+function newsRowHtml(g) {
+  const top = g.items[0];
+  const more = g.items.length - 1;
+  let tag, ic, head, sub;
+  if (g.card) {
+    const c = g.card;
+    tag = '名刺'; ic = 'user';
+    const did = c.deal_ids[0];
+    head = `${did ? `<span class="deal-no">#${did}</span> ` : ''}<b>${esc(c.company || '(会社不明)')}</b>`;
+    const act = g.items.find(i => i.type === 'act');
+    sub = `名刺を登録：${esc(c.name || '')}${c.position ? `（${esc(c.position)}）` : ''}${did ? '' : '<span class="nw-note">案件にはまだつながっていません</span>'}${act ? `<span class="nw-snip">${esc(act.title)}</span>` : ''}`;
+  } else {
+    const k = top.type === 'deal' ? ['新しい案件', 'inbox'] : top.type === 'link' ? ['名刺', 'user'] : (NEWS_KIND[top.kind] || ['メモ', 'note']);
+    [tag, ic] = k;
+    head = `<span class="deal-no">#${top.deal_id}</span> <b>${esc((g.deal && tdCompany(g.deal)) || top.company || '(会社不明)')}</b>`;
+    const t = top.type === 'deal' ? `案件を登録：${top.deal_title || '（案件名なし）'}` : top.title;
+    sub = `${esc(t)}${top.snippet && top.type === 'act' ? `<span class="nw-snip">${esc(top.snippet)}</span>` : ''}`;
+  }
+  const srcIt = g.items.find(i => i.source) || top;
+  const src = srcIt.source === 'slack' ? '<span class="nw-src">Slack</span>' : srcIt.source === 'vendor' ? `<span class="nw-src">${esc(srcIt.vendor || 'テレアポ業者')}</span>` : '';
+  return `<button class="nw-row" data-nw="${esc(g.key)}">
+    <span class="nw-tag">${ico(ic, 12)} ${esc(tag)}</span>
+    <span class="nw-body"><span class="nw-head">${head}${more > 0 ? `<span class="nw-more">ほか${more}件</span>` : ''}</span><span class="nw-sub">${sub}</span></span>
+    <span class="nw-meta">${src}<span class="nw-time">${esc(newsTime(g.at))}</span></span>
+  </button>`;
+}
+function newsSectionHtml(vendorNews) {
+  const groups = newsGroups();
+  const total = vendorNews.length + groups.length;
+  if (!total) return '';
+  const LIMIT = 8;
+  const shown = NEWS.showAll ? groups : groups.slice(0, LIMIT);
+  return `<section class="td-sec td-news" id="td-news"><div class="td-sec-h"><span>${ico('inbox')} 新着</span><b>${total}</b>
+      ${groups.length ? '<button class="btn-link nw-allread" id="nwAllRead">すべて既読にする</button>' : ''}</div>
+    ${vendorNews.map(d => `<button class="td-news-row" data-td-open="${d.id}"><span class="nw-tag nw-tag-v">${ico('phone', 12)} テレアポ業者</span><span class="deal-no">#${d.id}</span> <b>${esc(tdCompany(d))}</b>
+      <span>${esc((d.vreq.labels || []).join('・'))}</span><span class="td-go">開く →</span></button>`).join('')}
+    ${shown.map(newsRowHtml).join('')}
+    ${groups.length > LIMIT && !NEWS.showAll ? `<button class="btn-link nw-showall" id="nwShowAll">新着をすべて表示（ほか${groups.length - LIMIT}件）</button>` : ''}
+  </section>`;
+}
+function bindNews(pane) {
+  const groups = new Map(newsGroups().map(g => [g.key, g]));
+  pane.querySelectorAll('[data-nw]').forEach(b => b.onclick = () => {
+    const g = groups.get(b.dataset.nw);
+    if (!g) return;
+    newsMarkSeen(g.items.map(i => i.key));
+    if (g.card) {
+      const did = g.card.deal_ids[0];
+      if (did) { setView('deals'); showDeal(did); }
+      else { renderToday(); window.open(`/app.html?card=${encodeURIComponent(g.card.card_id)}`, '_blank', 'noopener'); }
+    } else { setView('deals'); showDeal(g.dealId); }
+  });
+  if ($('nwAllRead')) $('nwAllRead').onclick = () => {
+    newsMarkSeen([...groups.values()].flatMap(g => g.items.map(i => i.key)));
+    NEWS.showAll = false; renderToday();
+  };
+  if ($('nwShowAll')) $('nwShowAll').onclick = () => { NEWS.showAll = true; renderToday(); };
+}
+
 // ── 今日の画面 ──
 const tdAddDays = n => { const t = new Date(); t.setDate(t.getDate() + n); return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`; };
 function tdGuessKind(text) {
@@ -89,9 +220,7 @@ function renderToday() {
         ${[['late', '期限切れ', g.late.length, 't-red'], ['today', '今日', g.today.length, 't-amber'], ['none', '次の一手なし', g.none.length, 't-orange'], ['week', 'この先7日', g.week.length, 't-blue']]
           .map(([k, l, n, c]) => `<button class="td-tile ${c} ${n ? '' : 'is-zero'}" data-td-jump="${k}" ${n ? '' : 'disabled'}><b>${n}</b><span>${l}</span></button>`).join('')}
       </div>
-      ${g.news.length ? `<section class="td-sec td-news"><div class="td-sec-h"><span>${ico('phone')} テレアポ業者から新着</span><b>${g.news.length}</b></div>
-        ${g.news.map(d => `<button class="td-news-row" data-td-open="${d.id}"><span class="deal-no">#${d.id}</span> <b>${esc(tdCompany(d))}</b>
-          <span>${esc((d.vreq.labels || []).join('・'))}</span><span class="td-go">開く →</span></button>`).join('')}</section>` : ''}
+      ${newsSectionHtml(g.news)}
       ${sec('late', '期限が過ぎている', g.late, 'td-late')}
       ${sec('today', '今日', g.today, 'td-today', g.late.length ? '' : '今日が期限のものはありません')}
       ${sec('none', '次の一手が決まっていない', g.none, 'td-none')}
@@ -100,6 +229,9 @@ function renderToday() {
       ${!(S.allDeals || []).some(d => d.is_open) ? '<div class="td-empty">進行中の案件はまだありません。右上の「＋ 新規案件」から始めましょう</div>' : ''}
     </div>`;
   bindToday();
+  if (!NEWS.loading && (!NEWS.items || Date.now() - NEWS.loadedAt > 60000)) {
+    loadNews().then(ok => { if (ok && S.view === 'today' && TD.open === null) renderToday(); });
+  }
 }
 
 function tdCompany(d) { return (d.card && d.card.company) || d.company_snapshot || '(会社不明)'; }
@@ -151,6 +283,7 @@ function tdRowHtml(d, key) {
 
 function bindToday() {
   const pane = $('viewPane');
+  bindNews(pane);
   if ($('tdOwner')) $('tdOwner').onchange = e => { TD.owner = e.target.value; storeSet(TD_OWNER_KEY, TD.owner); renderToday(); };
   pane.querySelectorAll('[data-td-open]').forEach(b => b.onclick = () => { setView('deals'); showDeal(Number(b.dataset.tdOpen)); });
   pane.querySelectorAll('[data-td-jump]').forEach(b => b.onclick = () => { const el = $(`td-${b.dataset.tdJump}`); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); });

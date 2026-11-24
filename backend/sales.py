@@ -1235,6 +1235,99 @@ def group_link(c, tenant_id: str, row) -> Optional[dict]:
             "next_action_due": other["next_action_due"], "delivery_on": other["delivery_on"]}
 
 
+# ── 新着 ──
+NEWS_SKIP_TITLES = ("AIの事前調査", "リストでの判定")
+_REG_DATE_RE = re.compile(r"(\d{4})[/\-.年](\d{1,2})[/\-.月](\d{1,2})日?(?:[ T]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?")
+SLACK_MARK = "— Slackの投稿 —"
+
+
+def parse_reg_date(s) -> Optional[datetime]:
+    """名刺の登録日（シートのI列。2026/11/24 11:02 など）を読む。読めなければ None"""
+    m = _REG_DATE_RE.search(str(s or ""))
+    if not m:
+        return None
+    y, mo, d, hh, mm, ss = m.groups()
+    try:
+        return datetime(int(y), int(mo), int(d), int(hh or 0), int(mm or 0), int(ss or 0))
+    except ValueError:
+        return None
+
+
+def _news_snippet(body: Optional[str]) -> str:
+    b = (body or "").strip()
+    if SLACK_MARK in b:
+        head = b.split(SLACK_MARK, 1)[0].strip()
+        b = head or b.split(SLACK_MARK, 1)[1].strip()
+    b = re.sub(r"\s+", " ", b)
+    return b[:90] + ("…" if len(b) > 90 else "")
+
+
+def _max_activity_id(tenant_id: str) -> int:
+    with _conn() as c:
+        return c.execute("SELECT COALESCE(MAX(id),0) m FROM activities WHERE tenant_id=?", (tenant_id,)).fetchone()["m"]
+
+
+def news_items(c_cards: list, tenant_id: str, days: int = 7, after: int = 0) -> list:
+    """新着の一覧（新しい順）。after を渡すとその番号より後の記録だけ（自分が書いた記録を既読にするため）"""
+    days = max(1, min(int(days or 7), 30))
+    since_dt = datetime.now() - timedelta(days=days)
+    since = since_dt.isoformat(timespec="seconds")
+    cards = {x["id"]: x for x in (c_cards or [])}
+    items = []
+    with _conn() as c:
+        deals_by_card = {}
+        for d in c.execute("SELECT id, card_id FROM deals WHERE tenant_id=? AND card_id<>''", (tenant_id,)):
+            deals_by_card.setdefault(d["card_id"], []).append(d["id"])
+        new_cards = set()
+        if not after:
+            for cid, x in cards.items():
+                at = parse_reg_date(x.get("registered_date"))
+                if not at or at < since_dt or at > datetime.now() + timedelta(days=1):
+                    continue
+                new_cards.add(cid)
+                items.append({"key": f"c:{cid}", "type": "card", "at": at.isoformat(timespec="seconds"),
+                              "card_id": cid, "company": x.get("company") or "", "name": x.get("name") or "",
+                              "position": x.get("department_position") or "",
+                              "owners": x.get("assigned_to_list") or [],
+                              "deal_ids": sorted(deals_by_card.get(cid, []), reverse=True)})
+        vnames = {v["id"]: v["name"] for v in c.execute("SELECT id, name FROM vendors WHERE tenant_id=?", (tenant_id,))} \
+            if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='vendors'").fetchone() else {}
+        rows = c.execute("""SELECT a.id, a.deal_id, a.kind, a.title, a.body, a.created_at, a.vendor_id,
+                d.company_snapshot, d.title AS deal_title, d.card_id, d.owner, d.pipeline, d.stage
+            FROM activities a JOIN deals d ON d.id=a.deal_id AND d.tenant_id=a.tenant_id
+            WHERE a.tenant_id=? AND a.created_at>=? AND a.id>? ORDER BY a.id DESC LIMIT 300""",
+                         (tenant_id, since, int(after or 0))).fetchall()
+        for a in rows:
+            title = a["title"] or ""
+            kind = a["kind"]
+            if kind == "stage":
+                if title.startswith("名刺をつなぎました"):
+                    if a["card_id"] in new_cards:
+                        continue          # 名刺の登録の行にまとめて出す
+                    typ = "link"
+                elif title.startswith("案件作成"):
+                    typ = "deal"
+                else:
+                    continue              # 段階の変更などは新着にしない
+            elif kind in USER_ACTIVITY_KINDS:
+                if title.startswith(NEWS_SKIP_TITLES):
+                    continue
+                typ = "act"
+            else:
+                continue
+            card = cards.get(a["card_id"]) if a["card_id"] else None
+            items.append({"key": f"a:{a['id']}", "type": typ, "id": a["id"], "kind": kind,
+                          "at": a["created_at"], "deal_id": a["deal_id"],
+                          "company": (card or {}).get("company") or a["company_snapshot"] or "",
+                          "deal_title": a["deal_title"] or "", "owner": a["owner"] or "",
+                          "title": title, "snippet": _news_snippet(a["body"]),
+                          "source": "slack" if SLACK_MARK in (a["body"] or "") else
+                                    ("vendor" if a["vendor_id"] else ""),
+                          "vendor": vnames.get(a["vendor_id"]) if a["vendor_id"] else None})
+    items.sort(key=lambda x: x["at"] or "", reverse=True)
+    return items
+
+
 def build_router(check_session: Callable, fetch_cards: Callable,
                  get_tenant: Optional[Callable] = None, list_tenants: Optional[Callable] = None) -> APIRouter:
     r = APIRouter(prefix="/api/sales")
@@ -1732,6 +1825,15 @@ def build_router(check_session: Callable, fetch_cards: Callable,
                 return any(ql in (h or "").lower() for h in hay)
             deals = [d for d in deals if hit(d)]
         return {"deals": deals, "total": len(deals), "settings": settings}
+
+    # ── 新着（今日やることの一番上）──
+    #   最近の営業メモ・電話・アポ・メールの記録、名刺の登録、名刺のつながり、新しい案件
+    #   既読は端末ごと（ブラウザに保存）。ここでは「最近のもの」を返すだけ
+    @r.get("/news")
+    def news(days: int = 7, after: int = 0, session: dict = Depends(check_session)):
+        t = session["tenant_id"]
+        return {"items": news_items(c_cards=fetch_cards(t), tenant_id=t, days=days, after=after),
+                "max_activity_id": _max_activity_id(t), "now": _now()}
 
     @r.get("/cards/{card_id}/deal-candidates")
     def card_deal_candidates(card_id: str, session: dict = Depends(check_session)):
